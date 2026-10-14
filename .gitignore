@@ -1,0 +1,15 @@
+# Secretos / entorno local
+.env
+.env.*
+!.env.example
+
+# Vercel
+.vercel/
+
+# Dependencias / build
+node_modules/
+dist/
+
+# OS / editor
+.DS_Store
+Thumbs.db

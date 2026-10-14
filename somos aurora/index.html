@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#ffffff" />
+  <title>Somos Aurora · Tu voz sí importa</title>
+  <meta name="description" content="Espacio de escucha ciudadana para La Aurora, Daule." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Allura&family=DM+Sans:wght@400;500;600;700&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --orange:#ff6500;--orange2:#ff8a18;--blue:#073c78;--blue2:#0b65c7;--green:#079b1c;
+      --ink:#0d274d;--muted:#66758d;--paper:#fff;--soft:#f8fbff;--line:#dfe8f1;
+      --shadow:0 18px 50px rgba(12,42,82,.11);--r:22px;
+    }
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:#eef3f8;color:var(--ink);font-family:'DM Sans',system-ui,-apple-system,Segoe UI,sans-serif}.site{width:min(1440px,100%);margin:auto;background:#fff;min-height:100vh;box-shadow:0 0 60px rgba(7,37,76,.1)}a{color:inherit;text-decoration:none}button,input,select,textarea{font:inherit}button{cursor:pointer}.container{width:min(1280px,calc(100% - 56px));margin:auto}
+    header{height:76px;background:#fff;display:flex;align-items:center;position:sticky;top:0;z-index:30;border-bottom:1px solid #eef2f6}.nav{display:flex;align-items:center;justify-content:space-between;gap:28px;width:100%}.logo{width:150px;height:52px;object-fit:contain}.navlinks{display:flex;align-items:center;gap:36px;font-size:14px;font-weight:700;color:#314968}.navlinks a.active{color:var(--orange);position:relative}.navlinks a.active:after{content:"";position:absolute;left:0;right:0;bottom:-11px;height:3px;background:var(--orange);border-radius:3px}.navcta,.orange-btn{border:0;border-radius:999px;background:linear-gradient(135deg,var(--orange),var(--orange2));color:#fff;font-weight:800;padding:14px 23px;display:inline-flex;align-items:center;justify-content:center;gap:10px;box-shadow:0 10px 24px rgba(255,101,0,.22)}.hamb{display:none;background:transparent;border:0;font-size:27px;color:var(--blue)}
+
+    .hero{position:relative;min-height:520px;overflow:hidden;background-image:linear-gradient(90deg,rgba(3,18,39,.88) 0%,rgba(4,22,47,.55) 38%,rgba(4,22,47,.06) 70%),url('https://imagenes.expreso.ec/files/og_thumbnail/uploads/2025/08/13/689cb669246eb.jpeg');background-size:cover;background-position:center}.hero:after{content:"";position:absolute;inset:auto 0 0;height:80px;background:linear-gradient(transparent,#fff)}.hero-grid{position:relative;z-index:2;display:grid;grid-template-columns:.95fr 1.2fr;min-height:520px;align-items:end}.hero-copy{align-self:center;color:#fff;padding:68px 0 90px}.eyebrow{display:inline-block;background:var(--orange);color:#fff;padding:6px 10px;border-radius:4px;font:800 12px/1 'Montserrat',sans-serif;letter-spacing:.04em;text-transform:uppercase}.hero h1{font:900 clamp(56px,7vw,104px)/.86 'Montserrat',sans-serif;margin:18px 0 18px;letter-spacing:-.06em}.hero h1 span{display:block;color:var(--orange)}.hero p{max-width:500px;font-size:21px;line-height:1.35;margin:0 0 25px;color:#fff}.hero-person{height:500px;display:flex;align-items:end;justify-content:center;position:relative}.hero-person img{height:520px;max-width:100%;object-fit:contain;object-position:bottom;filter:drop-shadow(0 18px 26px rgba(0,0,0,.18))}.signature{position:absolute;right:2%;top:23%;color:#fff;text-align:center;transform:rotate(-4deg);text-shadow:0 3px 8px rgba(0,0,0,.35)}.signature .name{font:400 56px/0.8 'Allura',cursive}.signature .tag{display:block;border-bottom:4px solid var(--orange);padding:2px 8px 9px;font:800 13px/1.2 'Montserrat';letter-spacing:.14em;text-transform:uppercase}.hero-action{margin-top:26px}
+
+    .section{padding:58px 0}.listen{padding-top:38px}.listen-grid{display:grid;grid-template-columns:270px 1fr;gap:28px;align-items:stretch}.person-side{position:relative;min-height:320px;border-radius:0 60px 60px 0;background:linear-gradient(145deg,#fff0e5,#fff);overflow:hidden}.person-side:before{content:"";position:absolute;width:130px;height:280px;background:linear-gradient(var(--orange2),var(--orange));border-radius:0 100px 100px 0;left:0;top:10px;opacity:.85}.person-side img{position:absolute;bottom:-6px;left:-6px;height:330px;z-index:2;object-fit:contain}.person-label{position:absolute;z-index:3;right:16px;top:80px;width:120px}.person-label strong{display:block;font:900 24px/.95 'Montserrat';color:var(--blue);letter-spacing:-.05em}.person-label p{font-size:13px;color:#61738a;line-height:1.25;margin:10px 0}.listen-main{padding:10px 0}.section-kicker{font:900 12px/1 'Montserrat';letter-spacing:.06em;text-transform:uppercase;color:var(--orange);margin-bottom:5px}.section-title{font:900 clamp(34px,4vw,56px)/1 'Montserrat';letter-spacing:-.045em;color:var(--blue);margin:0}.section-sub{color:#71819a;font-size:18px;margin:8px 0 24px}.choice-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}.choice{border:0;text-align:left;border-radius:22px;padding:24px;min-height:190px;position:relative;overflow:hidden;transition:.2s transform,.2s box-shadow}.choice:hover{transform:translateY(-3px);box-shadow:var(--shadow)}.choice.orange{background:linear-gradient(145deg,#fff5ed,#fff)}.choice.blue{background:linear-gradient(145deg,#eef7ff,#fff)}.choice.green{background:linear-gradient(145deg,#effbef,#fff)}.icon{width:54px;height:54px;border-radius:16px;display:grid;place-items:center;font-size:25px;color:white;margin-bottom:18px}.orange .icon{background:var(--orange)}.blue .icon{background:#0d79ef}.green .icon{background:var(--green)}.choice h3{font:900 18px/1.1 'Montserrat';margin:0 0 8px;color:var(--blue)}.choice p{margin:0;color:#53657e;font-size:14px;line-height:1.38}.choice .arrow{position:absolute;right:18px;bottom:18px;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:white;font-weight:900}.orange .arrow{color:var(--orange)}.blue .arrow{color:#0d79ef}.green .arrow{color:var(--green)}
+
+    .voices{padding:18px 0 52px}.voices-grid{display:grid;grid-template-columns:260px 1fr;gap:28px}.carolina{position:relative;min-height:335px;border-radius:0 56px 56px 0;background:linear-gradient(145deg,#e8f6ff,#fff);overflow:hidden}.carolina:before{content:"";position:absolute;width:135px;height:290px;background:#8ccdfa;border-radius:0 100px 100px 0;left:0;top:16px}.carolina img{position:absolute;bottom:-10px;left:-20px;height:360px;z-index:2}.carolina .person-label{top:135px}.opinion-wrap{display:grid;grid-template-columns:210px 1fr;gap:24px;align-items:start}.opinions{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}.opinion{border:1px solid var(--line);border-radius:18px;padding:24px;min-height:230px;background:white;box-shadow:0 6px 18px rgba(9,55,106,.04)}.quote{font:900 34px/1 'Montserrat';color:var(--orange);height:30px}.opinion p{color:#344962;font-size:15px;line-height:1.45}.who{display:flex;align-items:center;gap:10px;margin-top:20px;font-size:12px;color:#60728a}.avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(145deg,#dbe9f7,#8bb4df)}.date{display:block;text-align:right;margin-top:14px;color:#8290a4;font-size:11px}.outline-btn{border:1.5px solid #a8bed6;background:#fff;color:var(--blue);border-radius:999px;padding:12px 17px;font-weight:800;display:inline-flex;align-items:center;gap:8px;margin-top:14px}
+
+    .report{position:relative;overflow:hidden;padding:34px 0 32px;background:linear-gradient(105deg,#fff 0%,#fff 58%,#fff4e9 100%)}.report:after{content:"";position:absolute;right:-100px;bottom:-110px;width:420px;height:260px;background:linear-gradient(135deg,rgba(255,160,50,.08),rgba(255,101,0,.32));transform:rotate(-13deg);border-radius:40px}.report-grid{display:grid;grid-template-columns:1fr 480px;gap:32px;align-items:center;position:relative;z-index:2}.bullets{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 22px;margin:22px 0}.bullet{font-size:14px;color:#425a75}.bullet:before{content:"✓";display:inline-grid;place-items:center;width:21px;height:21px;border-radius:50%;background:var(--orange);color:#fff;font-weight:900;margin-right:8px}.report-art{position:relative;height:300px}.paper{position:absolute;width:245px;height:300px;border-radius:8px;background:#fff;box-shadow:0 18px 40px rgba(12,42,82,.15);left:20px;top:5px;padding:24px;transform:rotate(-7deg)}.paper:before,.paper:after{content:"";position:absolute;inset:0;border-radius:8px;background:#fff;box-shadow:0 10px 25px rgba(12,42,82,.08);z-index:-1}.paper:before{transform:translate(34px,8px) rotate(10deg)}.paper:after{transform:translate(62px,18px) rotate(14deg)}.paper-logo{width:90px}.paper h3{font:900 24px/1.02 'Montserrat';color:var(--blue);margin:18px 0 8px}.paper small{color:#7a8798}.paper ol{font-size:12px;padding-left:18px;line-height:1.7}.jorge{position:absolute;right:-12px;bottom:-36px;height:330px;filter:drop-shadow(0 15px 20px rgba(0,0,0,.1))}.jorge-label{position:absolute;right:170px;bottom:52px;width:115px;z-index:4}.jorge-label strong{font:900 22px/.95 'Montserrat';color:var(--blue)}.jorge-label p{font-size:13px;color:#53657e;line-height:1.25;margin:7px 0}
+
+    .final{min-height:170px;background-image:linear-gradient(90deg,rgba(3,23,48,.9),rgba(3,23,48,.55)),url('https://img10.naventcdn.com/avisos/9/01/49/50/85/90/720x532/1598893648.jpg?isFirstImage=true');background-size:cover;background-position:center;display:flex;align-items:center;color:#fff}.final-grid{display:flex;align-items:center;justify-content:space-between;gap:24px}.final h2{font:900 34px/1 'Montserrat';margin:0 0 8px}.final p{margin:0;color:#dce8f5}.final .mini-logo{width:110px;filter:brightness(0) invert(1)}
+
+    .modal{position:fixed;inset:0;background:rgba(3,16,34,.72);display:none;align-items:center;justify-content:center;padding:24px;z-index:100;backdrop-filter:blur(7px)}.modal.open{display:flex}.modal-card{width:min(860px,100%);max-height:92vh;overflow:auto;background:#fff;border-radius:26px;box-shadow:0 32px 90px rgba(0,0,0,.34);position:relative}.modal-head{position:sticky;top:0;background:#fff;z-index:2;padding:24px 28px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:20px;align-items:start}.modal-head h2{font:900 30px/1 'Montserrat';color:var(--blue);margin:0}.modal-head p{margin:8px 0 0;color:var(--muted)}.x{border:0;background:#eff4f9;width:44px;height:44px;border-radius:50%;font-size:25px;color:var(--blue)}form{padding:25px 28px 30px;display:grid;gap:21px}.type-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.type-tab{border:2px solid var(--line);border-radius:14px;padding:12px 10px;background:#fff;font-weight:800;color:#49627e}.type-tab.active{border-color:var(--orange);background:#fff4ec;color:var(--orange)}fieldset{border:0;padding:0;margin:0}legend,.lbl{display:block;font-weight:800;color:var(--blue);margin-bottom:9px}.hint{font-weight:500;color:#8695a7;font-size:13px}.chips{display:flex;flex-wrap:wrap;gap:8px}.chip{position:relative}.chip input{position:absolute;opacity:0;pointer-events:none}.chip span{display:inline-flex;align-items:center;min-height:42px;padding:9px 13px;border:1.5px solid var(--line);border-radius:999px;background:#f8fbff;color:#3e5773;font-weight:700;font-size:13px;cursor:pointer}.chip input:checked+span{background:var(--blue);border-color:var(--blue);color:#fff}.row2{display:grid;grid-template-columns:1fr 1fr;gap:15px}input[type=text],input[type=tel],select,textarea,input[type=file]{width:100%;border:1.5px solid var(--line);background:#fbfdff;color:#17365e;border-radius:13px;padding:13px 14px;font-size:16px}textarea{min-height:125px;resize:vertical}input:focus,select:focus,textarea:focus{outline:3px solid rgba(11,101,199,.15);border-color:var(--blue2)}.consent{display:flex;gap:11px;background:#eef7ff;border-radius:13px;padding:13px;color:#3f5671;font-size:13px}.consent input{width:22px;height:22px;accent-color:var(--orange);flex:none}.privacy{font-size:12px;color:#7b8999}.send{border:0;background:linear-gradient(135deg,var(--orange),var(--orange2));color:#fff;border-radius:999px;padding:15px 24px;font-weight:900;justify-self:start}.error{font-size:12px;color:#b3261e;min-height:16px}.success{display:none;padding:18px;border-radius:14px;background:#effbf1;border:1px solid #aad9b4;color:#1c6c2a}.success.on{display:block}.hp{position:absolute;left:-9999px}.form-spinner{opacity:.65;pointer-events:none}
+
+    @media(max-width:900px){
+      .container{width:min(100% - 30px,760px)}header{height:68px}.navlinks{display:none}.hamb{display:block}.logo{width:125px}.navcta{display:none}
+      .hero{min-height:700px}.hero-grid{grid-template-columns:1fr;min-height:700px}.hero-copy{padding:44px 0 300px}.hero h1{font-size:61px}.hero p{font-size:17px;max-width:360px}
+      /* Mobile portrait-safe composition: every face stays fully inside its section. */
+      .hero-person{position:absolute;right:-20px;bottom:0;height:430px;width:62%;overflow:visible;align-items:flex-end;justify-content:flex-end}
+      .hero-person img{height:420px;width:auto;max-width:none;object-fit:contain;object-position:center bottom}
+      .signature{right:12px;top:auto;bottom:30px}.signature .name{font-size:38px}.signature .tag{font-size:8px}
+      .listen-grid,.voices-grid{grid-template-columns:1fr}
+      .person-side,.carolina{min-height:300px;border-radius:24px;overflow:hidden}
+      .person-side img{height:292px;bottom:0;left:-8px;object-fit:contain;object-position:center bottom}
+      .carolina img{height:305px;bottom:-2px;left:-6px;object-fit:contain;object-position:center bottom}
+      .person-label{right:18px;top:78px;width:170px}.carolina .person-label{top:102px}
+      .choice-grid{grid-template-columns:1fr}.choice{min-height:145px}.opinion-wrap{grid-template-columns:1fr}.opinions{grid-template-columns:1fr}
+      .report-grid{grid-template-columns:1fr}.report-art{height:395px;overflow:visible}.jorge{height:300px;right:-2px;bottom:0;object-fit:contain;object-position:center bottom}.jorge-label{right:145px;bottom:55px}
+      .final-grid{flex-direction:column;align-items:flex-start;padding:28px 0}.modal{padding:10px}.modal-card{border-radius:18px;max-height:95vh}.modal-head,form{padding-left:18px;padding-right:18px}.row2{grid-template-columns:1fr}.type-tabs{grid-template-columns:1fr}
+    }
+    @media(max-width:540px){
+      .hero{min-height:720px}.hero-grid{min-height:720px}.hero h1{font-size:52px}.hero-copy{padding-bottom:325px}
+      .hero-person{right:-56px;width:78%;height:435px}.hero-person img{height:425px}
+      .signature{right:8px;bottom:22px}.signature .name{font-size:34px}
+      .section{padding:42px 0}.section-title{font-size:36px}
+      .person-side,.carolina{min-height:315px}.person-side img{height:305px;left:-18px}.person-label{width:150px;right:8px;top:88px}
+      .carolina img{height:315px;left:-20px}.carolina .person-label{top:112px}
+      .opinions{gap:12px}
+      .report-art{height:390px;transform:none}.paper{left:0;top:18px;transform:rotate(-5deg) scale(.88);transform-origin:left top}.jorge{height:285px;right:-42px;bottom:0}.jorge-label{right:115px;bottom:58px;width:105px}
+      .final h2{font-size:29px}
+    }
+    @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.choice{transition:none}}
+  </style>
+</head>
+<body>
+<div class="site">
+<header>
+  <div class="container nav">
+    <a href="#inicio"><img class="logo" src="assets/logo.png" alt="Somos Aurora"></a>
+    <nav class="navlinks" aria-label="Principal"><a class="active" href="#inicio">Inicio</a><a href="#escucha">Escucha</a><a href="#propuestas">Propuestas</a><a href="#comunidad">Nuestra Comunidad</a><a href="#informes">Novedades</a></nav>
+    <button class="navcta open-form" data-type="Otro tema">Deja tu opinión <span>→</span></button>
+    <button class="hamb" aria-label="Abrir formulario">☰</button>
+  </div>
+</header>
+
+<main>
+<section class="hero" id="inicio">
+  <div class="container hero-grid">
+    <div class="hero-copy">
+      <span class="eyebrow">La Aurora</span>
+      <h1>Tu voz <span>sí importa</span></h1>
+      <p>Un espacio para que los habitantes de La Aurora compartan sus ideas, necesidades y propuestas. Porque una comunidad se construye escuchando.</p>
+      <button class="orange-btn hero-action open-form" data-type="Otro tema">📣 Deja tu opinión ahora <span>→</span></button>
+    </div>
+    <div class="hero-person">
+      <img src="assets/valeria.webp" alt="Valeria Constante">
+      <div class="signature"><div class="name">Valeria<br>Constante</div><span class="tag">Unidos por una mejor Aurora</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="section listen" id="escucha">
+  <div class="container listen-grid">
+    <aside class="person-side">
+      <img src="assets/josue.webp" alt="Josué Constante">
+      <div class="person-label"><strong>Josué<br>Constante</strong><p>Tus propuestas para mejorar nuestra comunidad.</p></div>
+    </aside>
+    <div class="listen-main" id="propuestas">
+      <div class="section-kicker">Dinos</div>
+      <h2 class="section-title">¿Qué te gustaría compartir?</h2>
+      <p class="section-sub">Tu opinión nos ayuda a identificar las prioridades de La Aurora.</p>
+      <div class="choice-grid">
+        <button class="choice orange open-form" data-type="Propuesta"><span class="icon">📣</span><h3>Una propuesta</h3><p>Comparte ideas para un mejor barrio.</p><span class="arrow">→</span></button>
+        <button class="choice blue open-form" data-type="Queja o problema"><span class="icon">!</span><h3>Una queja o problema</h3><p>Cuéntanos qué situación necesita atención.</p><span class="arrow">→</span></button>
+        <button class="choice green open-form" data-type="Otro tema"><span class="icon">💬</span><h3>Otro tema</h3><p>Cuéntanos lo que consideres importante para La Aurora.</p><span class="arrow">→</span></button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="voices" id="comunidad">
+  <div class="container voices-grid">
+    <aside class="carolina">
+      <img src="assets/carolina.webp" alt="Carolina Baquerizo">
+      <div class="person-label"><strong>Carolina<br>Baquerizo</strong><p>Tus quejas o problemas que necesitan atención.</p></div>
+    </aside>
+    <div class="opinion-wrap">
+      <div>
+        <div class="section-kicker">Voces de la comunidad</div>
+        <h2 class="section-title" style="font-size:36px">Opiniones recientes</h2>
+        <p class="section-sub" style="font-size:15px">Esto es lo que tus vecinos están compartiendo. Juntos podemos hacer la diferencia.</p>
+        <button class="outline-btn open-form" data-type="Otro tema">Ver todas las opiniones →</button>
+      </div>
+      <div class="opinions">
+        <article class="opinion"><div class="quote">“</div><p>Hace falta más iluminación en la calle principal, especialmente en las noches.</p><div class="who"><span class="avatar"></span><span>Vecino de La Aurora<br><b>Seguridad vial</b></span></div><span class="date">12 Oct 2026</span></article>
+        <article class="opinion"><div class="quote">“</div><p>Sería excelente tener más áreas verdes para las familias y los niños.</p><div class="who"><span class="avatar"></span><span>Madre de familia<br><b>Parques y recreación</b></span></div><span class="date">11 Oct 2026</span></article>
+        <article class="opinion"><div class="quote">“</div><p>El servicio de recolección de basura necesita mejorar en algunos sectores.</p><div class="who"><span class="avatar"></span><span>Residente<br><b>Limpieza</b></span></div><span class="date">10 Oct 2026</span></article>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="report" id="informes">
+  <div class="container report-grid">
+    <div>
+      <div class="section-kicker">Transparencia</div>
+      <h2 class="section-title" style="font-size:44px">Cada 5 días, un informe con tu voz</h2>
+      <p class="section-sub" style="font-size:16px;max-width:680px">Todas las opiniones se analizan y se agrupan en un documento claro con los temas más importantes de la comunidad.</p>
+      <div class="bullets"><div class="bullet">Resumen de principales temas</div><div class="bullet">Comentarios destacados</div><div class="bullet">Cantidad de opiniones por categoría</div><div class="bullet">Disponible para todos</div></div>
+      <a class="orange-btn" href="informe-demo.html">Ver último informe →</a>
+    </div>
+    <div class="report-art" aria-label="Ejemplo de informe ciudadano y Jorge Muñoz">
+      <div class="paper"><img src="assets/logo.png" class="paper-logo" alt=""><h3>Informe Ciudadano de La Aurora</h3><small>Periodo: 4–9 de Octubre 2026</small><ol><li>Seguridad vial</li><li>Limpieza y espacios públicos</li><li>Vías e infraestructura</li><li>Parques y recreación</li><li>Otros temas</li></ol></div>
+      <div class="jorge-label"><strong>Jorge<br>Muñoz</strong><p>Un informe claro, para una comunidad más informada.</p></div>
+      <img class="jorge" src="assets/jorge.webp" alt="Jorge Muñoz">
+    </div>
+  </div>
+</section>
+
+<section class="final">
+  <div class="container final-grid">
+    <div><h2>Sigamos construyendo<br>una mejor Aurora</h2><p>Tu barrio, tus ideas, nuestra comunidad.</p></div>
+    <button class="orange-btn open-form" data-type="Otro tema">Deja tu opinión ahora →</button>
+  </div>
+</section>
+</main>
+</div>
+
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+  <div class="modal-card">
+    <div class="modal-head"><div><h2 id="modalTitle">Cuéntanos qué pasa</h2><p>El formulario toma aproximadamente un minuto. Nombre y celular son opcionales.</p></div><button class="x" type="button" id="closeModal" aria-label="Cerrar">×</button></div>
+    <form id="form" name="reporte" method="POST" enctype="multipart/form-data" data-netlify="true" data-netlify-honeypot="bot-field" novalidate>
+      <input type="hidden" name="form-name" value="reporte"><input type="hidden" id="tipo" name="tipo" value="Otro tema"><p class="hp"><label>No llenar <input name="bot-field"></label></p>
+      <div class="type-tabs" aria-label="Tipo de participación"><button type="button" class="type-tab" data-set-type="Propuesta">💡 Propuesta</button><button type="button" class="type-tab" data-set-type="Queja o problema">📣 Queja o problema</button><button type="button" class="type-tab" data-set-type="Otro tema">💬 Otro tema</button></div>
+      <fieldset><legend>1. ¿Sobre qué es? <span class="hint">(elige uno)</span></legend><div class="chips" id="cats">
+        <label class="chip"><input type="radio" name="tema" value="Agua potable y cortes"><span>Agua potable y cortes</span></label>
+        <label class="chip"><input type="radio" name="tema" value="Alcantarillado e inundaciones"><span>Alcantarillado e inundaciones</span></label>
+        <label class="chip"><input type="radio" name="tema" value="Tráfico y movilidad"><span>Tráfico y movilidad</span></label>
+        <label class="chip"><input type="radio" name="tema" value="Calles y baches"><span>Calles y baches</span></label>
+        <label class="chip"><input type="radio" name="tema" value="Basura y aseo"><span>Basura y aseo</span></label>
+        <label class="chip"><input type="radio" name="tema" value="Alumbrado público"><span>Alumbrado público</span></label>
+        <label class="chip"><input type="radio" name="tema" value="Áreas verdes y parques"><span>Áreas verdes y parques</span></label>
+        <label class="chip"><input type="radio" name="tema" value="Otro servicio"><span>Otro servicio</span></label>
+      </div><div class="error" id="err-cat"></div></fieldset>
+      <div class="row2"><div><label class="lbl" for="sector">2. ¿En qué sector?</label><select id="sector" name="sector"><option value="">Selecciona tu sector</option><option>Villa Club</option><option>La Joya</option><option>La Rioja</option><option>Laguna Club</option><option>Villa Italia</option><option>La Piazza</option><option>Avalon Plaza</option><option>Palmora Plaza</option><option>Vermont Plaza</option><option>Av. León Febres-Cordero</option><option>Zona abierta o pueblo antiguo</option><option>Otro sector</option></select><div class="error" id="err-sector"></div></div><div><label class="lbl" for="referencia">Referencia <span class="hint">(cerca de qué lugar)</span></label><input id="referencia" name="referencia" type="text" maxlength="120" placeholder="Ej.: frente a la plaza comercial, etapa 2"></div></div>
+      <div><label class="lbl" for="detalle">3. ¿Qué está pasando?</label><textarea id="detalle" name="detalle" maxlength="600" placeholder="Ej.: Hace tres días no llega el agua por las mañanas y el tanque del sector está seco."></textarea><div class="error" id="err-detalle"></div></div>
+      <div><label class="lbl" for="foto">Foto <span class="hint">(opcional, hasta 5 MB)</span></label><input id="foto" name="evidencia" type="file" accept="image/*"><div class="error" id="err-foto"></div></div>
+      <div class="row2"><div><label class="lbl" for="nombre">Tu nombre <span class="hint">(opcional)</span></label><input id="nombre" name="nombre" type="text" maxlength="60" autocomplete="name"></div><div><label class="lbl" for="celular">Celular <span class="hint">(opcional, para avisarte cómo va)</span></label><input id="celular" name="celular" type="tel" maxlength="15" inputmode="tel" placeholder="0991234567" autocomplete="tel"></div></div>
+      <label class="consent"><input type="checkbox" id="consent" name="consentimiento" value="si"><span>Declaro que soy mayor de edad y autorizo el tratamiento de mis datos para gestionar este reporte, contactarme sobre él y realizar análisis agregados por sector. Puedo revocar esta autorización escribiendo a <b>somosaurora.daule@gmail.com</b>.</span></label><div class="error" id="err-consent"></div>
+      <p class="privacy">No incluyas datos de otras personas, como nombres, placas o números de casa. No mostramos tu nombre en ningún resumen público.</p>
+      <button class="send" id="send" type="submit">Enviar reporte</button>
+      <div class="success" id="success" role="status">✅ Gracias. Tu reporte fue recibido por Somos Aurora.</div>
+    </form>
+  </div>
+</div>
+
+<script>
+(function(){
+  const modal=document.getElementById('modal'), form=document.getElementById('form'), tipo=document.getElementById('tipo'), success=document.getElementById('success');
+  const tabs=[...document.querySelectorAll('[data-set-type]')];
+  function setType(v){tipo.value=v;tabs.forEach(b=>b.classList.toggle('active',b.dataset.setType===v));document.getElementById('modalTitle').textContent=v==='Propuesta'?'Comparte tu propuesta':v==='Queja o problema'?'Cuéntanos el problema':'Cuéntanos qué pasa';}
+  function open(v){setType(v||'Otro tema');modal.classList.add('open');document.body.style.overflow='hidden';setTimeout(()=>tabs.find(x=>x.classList.contains('active'))?.focus(),40)}
+  function close(){modal.classList.remove('open');document.body.style.overflow=''}
+  document.querySelectorAll('.open-form').forEach(b=>b.addEventListener('click',()=>open(b.dataset.type)));
+  document.querySelector('.hamb').addEventListener('click',()=>open('Otro tema'));
+  document.getElementById('closeModal').addEventListener('click',close);modal.addEventListener('click',e=>{if(e.target===modal)close()});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&modal.classList.contains('open'))close()});tabs.forEach(b=>b.addEventListener('click',()=>setType(b.dataset.setType)));
+  function clean(s){return(s||'').replace(/\s+/g,' ').trim()}
+  form.addEventListener('submit',async e=>{
+    e.preventDefault(); success.classList.remove('on');
+    const tema=form.querySelector('input[name=tema]:checked')?.value||'', sector=document.getElementById('sector').value, detalle=clean(document.getElementById('detalle').value), consent=document.getElementById('consent').checked, file=document.getElementById('foto').files[0];
+    document.getElementById('err-cat').textContent=tema?'':'Elige el tema del reporte.';document.getElementById('err-sector').textContent=sector?'':'Selecciona tu sector.';document.getElementById('err-detalle').textContent=detalle.length>=10?'':'Cuéntanos un poco más (al menos 10 letras).';document.getElementById('err-consent').textContent=consent?'':'Necesitamos tu autorización para gestionar el reporte.';const big=file&&file.size>5*1024*1024;document.getElementById('err-foto').textContent=big?'La foto pesa más de 5 MB.':'';
+    if(!tema||!sector||detalle.length<10||!consent||big)return;
+    const btn=document.getElementById('send');btn.disabled=true;btn.textContent='Enviando…';form.classList.add('form-spinner');
+    try{const fd=new FormData(form);const body=new URLSearchParams();for(const [k,v] of fd.entries()){if(typeof v==='string')body.append(k,v)}const r=await fetch('/',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body.toString()});if(!r.ok)throw new Error('submit');success.classList.add('on');form.reset();setType('Otro tema');}
+    catch(err){success.textContent='✅ Demo validado. En producción este envío quedará conectado a Netlify/Supabase.';success.classList.add('on');}
+    finally{btn.disabled=false;btn.textContent='Enviar reporte';form.classList.remove('form-spinner')}
+  });
+})();
+</script>
+</body>
+</html>

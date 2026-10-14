@@ -1,8 +1,11 @@
 // GET /api/featured — Top de opiniones del informe más reciente (público).
-// Lee con la anon key (solo lectura, permitido por RLS en featured_opinions).
+// Vercel Edge Function. Lee con la anon key (solo lectura, permitido por RLS).
 
-export async function onRequestGet(context) {
-  const { env } = context;
+export const config = { runtime: "edge" };
+
+export default async function handler(request) {
+  if (request.method !== "GET") return new Response("Método no permitido", { status: 405 });
+  const env = process.env;
   const headers = { "Content-Type": "application/json", "Cache-Control": "public, max-age=120" };
   try {
     const h = {

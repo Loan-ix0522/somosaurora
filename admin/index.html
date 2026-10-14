@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="robots" content="noindex,nofollow" />
+<title>Somos Aurora · Panel</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root{--orange:#ff6500;--blue:#073c78;--blue2:#0b65c7;--green:#079b1c;--red:#b3261e;--ink:#0d274d;--muted:#66758d;--line:#dfe8f1;--soft:#f6f9fc}
+  *{box-sizing:border-box}body{margin:0;font-family:'DM Sans',system-ui,Segoe UI,sans-serif;background:var(--soft);color:var(--ink)}
+  h1,h2,h3{font-family:'Montserrat',sans-serif;letter-spacing:-.02em;margin:0}
+  a{color:var(--blue2)}
+  button{font:inherit;cursor:pointer;border:0;border-radius:10px;padding:10px 16px;font-weight:700}
+  .btn{background:linear-gradient(135deg,var(--orange),#ff8a18);color:#fff}
+  .btn.ghost{background:#fff;border:1.5px solid var(--line);color:var(--blue)}
+  .btn.blue{background:var(--blue)}.btn.red{background:var(--red)}.btn.green{background:var(--green)}
+  button:disabled{opacity:.55;cursor:not-allowed}
+  input,select,textarea{font:inherit;border:1.5px solid var(--line);border-radius:10px;padding:9px 11px;background:#fff;color:var(--ink);width:100%}
+  .wrap{max-width:1280px;margin:auto;padding:18px}
+  header.bar{background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20}
+  .bar .wrap{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 18px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:900;color:var(--blue);font-family:Montserrat}
+  .brand .dot{width:12px;height:12px;border-radius:3px;background:var(--orange)}
+  /* login */
+  .login{max-width:380px;margin:9vh auto;background:#fff;border:1px solid var(--line);border-radius:18px;padding:28px;box-shadow:0 18px 50px rgba(12,42,82,.1)}
+  .login h1{font-size:24px;color:var(--blue);margin-bottom:6px}.login p{color:var(--muted);margin:0 0 18px;font-size:14px}
+  .field{margin-bottom:14px}.field label{display:block;font-weight:700;font-size:13px;margin-bottom:6px}
+  .msg{font-size:13px;margin-top:10px;min-height:18px}.msg.err{color:var(--red)}.msg.ok{color:var(--green)}
+  /* cards */
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:16px 0}
+  .stat{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px}
+  .stat .n{font:900 28px/1 Montserrat;color:var(--blue)}.stat .l{color:var(--muted);font-size:13px;margin-top:4px}
+  .panel{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;margin:16px 0}
+  .panel h2{font-size:18px;color:var(--blue);margin-bottom:12px}
+  .toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-bottom:12px}
+  .toolbar .f{min-width:150px;flex:1}
+  .toolbar .f label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:4px}
+  /* table */
+  .tablebox{overflow:auto;border:1px solid var(--line);border-radius:12px;max-height:60vh}
+  table{border-collapse:collapse;width:100%;font-size:13px;white-space:nowrap}
+  th,td{padding:9px 11px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  th{position:sticky;top:0;background:#eef4fb;color:var(--blue);font-weight:800;z-index:1;cursor:pointer}
+  td.detalle{white-space:normal;max-width:360px}
+  tr:hover td{background:#fafcff}
+  .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700}
+  .b-prop{background:#fff1e6;color:#c45500}.b-queja{background:#e7f1ff;color:#0d79ef}.b-otro{background:#e9f9ea;color:#0a7d1c}
+  .muted{color:var(--muted)}.right{text-align:right}
+  .top-row{display:grid;grid-template-columns:40px 1fr 200px 90px;gap:10px;align-items:start;padding:10px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px}
+  .top-row textarea{min-height:60px;resize:vertical}
+  .hidden{display:none}
+  .danger{background:#fff4f3;border:1px solid #f3c6c2;border-radius:12px;padding:14px;margin-top:10px}
+  @media(max-width:640px){.top-row{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginView" class="login hidden">
+  <h1>Panel Somos Aurora</h1>
+  <p>Acceso solo para el equipo.</p>
+  <div class="field"><label>Correo</label><input id="email" type="email" autocomplete="username" placeholder="tu@correo.com"></div>
+  <div class="field"><label>Contraseña</label><input id="password" type="password" autocomplete="current-password" placeholder="••••••••"></div>
+  <button id="loginBtn" class="btn" style="width:100%">Entrar</button>
+  <div id="loginMsg" class="msg"></div>
+</div>
+
+<!-- NOT CONFIGURED -->
+<div id="setupView" class="login hidden">
+  <h1>Falta configurar Supabase</h1>
+  <p>Aún no hay credenciales. Configura <code>SUPABASE_URL</code> y <code>SUPABASE_ANON_KEY</code> en Cloudflare Pages (o en <code>.dev.vars</code> para local) y recarga.</p>
+</div>
+
+<!-- APP -->
+<div id="appView" class="hidden">
+  <header class="bar">
+    <div class="wrap">
+      <div class="brand"><span class="dot"></span> Somos Aurora · Panel</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span id="whoami" class="muted" style="font-size:13px"></span>
+        <button id="logoutBtn" class="btn ghost">Salir</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <div class="grid">
+      <div class="stat"><div class="n" id="stTotal">0</div><div class="l">Opiniones (filtro actual)</div></div>
+      <div class="stat"><div class="n" id="stProp">0</div><div class="l">Propuestas</div></div>
+      <div class="stat"><div class="n" id="stQueja">0</div><div class="l">Quejas/problemas</div></div>
+      <div class="stat"><div class="n" id="stOtro">0</div><div class="l">Otros temas</div></div>
+    </div>
+
+    <!-- OPINIONES -->
+    <div class="panel">
+      <h2>Opiniones recibidas</h2>
+      <div class="toolbar">
+        <div class="f"><label>Buscar</label><input id="fSearch" type="search" placeholder="texto, nombre, referencia…"></div>
+        <div class="f"><label>Tipo</label><select id="fTipo"><option value="">Todos</option><option>Propuesta</option><option>Queja o problema</option><option>Otro tema</option></select></div>
+        <div class="f"><label>Tema</label><select id="fTema"><option value="">Todos</option></select></div>
+        <div class="f"><label>Sector</label><select id="fSector"><option value="">Todos</option></select></div>
+        <div class="f"><label>Desde</label><input id="fFrom" type="date"></div>
+        <div class="f"><label>Hasta</label><input id="fTo" type="date"></div>
+        <div style="display:flex;gap:8px">
+          <button id="reloadBtn" class="btn blue">Recargar</button>
+          <button id="csvBtn" class="btn ghost">Exportar CSV</button>
+        </div>
+      </div>
+      <div class="tablebox">
+        <table id="tbl">
+          <thead><tr>
+            <th data-k="created_at">Fecha y hora</th>
+            <th data-k="tipo">Tipo</th>
+            <th data-k="tema">Tema</th>
+            <th data-k="sector">Sector</th>
+            <th data-k="referencia">Referencia</th>
+            <th data-k="detalle">Detalle</th>
+            <th data-k="nombre">Nombre</th>
+            <th data-k="celular">Celular</th>
+            <th data-k="consentimiento">Consent.</th>
+            <th>Foto</th>
+          </tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <p class="muted" style="font-size:12px;margin-top:8px">Tip: clic en un encabezado para ordenar.</p>
+    </div>
+
+    <!-- INFORME SEMANAL -->
+    <div class="panel">
+      <h2>Informe semanal (por frecuencia)</h2>
+      <p class="muted" style="font-size:14px;margin-top:-6px">Usa el rango de fechas de arriba (por defecto, últimos 7 días). Calcula conteos y propone el top; puedes editarlo antes de publicar.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0">
+        <button id="genBtn" class="btn">Generar informe</button>
+        <button id="publishBtn" class="btn green hidden">Publicar top en la web</button>
+      </div>
+      <div id="reportOut" class="hidden">
+        <div class="grid" id="catCounts"></div>
+        <h3 style="font-size:15px;color:var(--blue);margin:14px 0 8px">Top propuesto (edítalo):</h3>
+        <div id="topList"></div>
+        <div class="field" style="margin-top:12px"><label style="font-weight:700;font-size:13px">Resumen del informe (opcional)</label><textarea id="resumen" rows="2" placeholder="Ej.: Esta semana predominaron los temas de basura y alumbrado…"></textarea></div>
+      </div>
+    </div>
+
+    <!-- ZONA PELIGRO -->
+    <div class="panel">
+      <h2>Archivar y limpiar</h2>
+      <div class="danger">
+        <p style="margin:0 0 8px"><b>Borra las opiniones crudas</b> del rango seleccionado (y sus fotos) para mantener la base liviana. <b>Conserva</b> los informes y el top publicado.</p>
+        <p class="muted" style="font-size:13px;margin:0 0 10px">Primero genera y publica el informe. Esta acción no se puede deshacer.</p>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input id="confirmText" placeholder='Escribe BORRAR para confirmar' style="max-width:260px">
+          <button id="purgeBtn" class="btn red" disabled>Archivar y limpiar el rango</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="msg" style="position:fixed;bottom:16px;right:16px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 16px;box-shadow:0 10px 30px rgba(12,42,82,.15);display:none"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+(function(){
+  const $ = (s)=>document.querySelector(s);
+  const show = (el)=>el.classList.remove('hidden');
+  const hide = (el)=>el.classList.add('hidden');
+  let db=null, rows=[], sortKey='created_at', sortDir=-1, generatedTop=[];
+
+  function toast(msg, ok=true){ const t=$('#toast'); t.textContent=msg; t.style.display='block'; t.style.color= ok?'var(--green)':'var(--red)'; setTimeout(()=>t.style.display='none', 3200); }
+  function fmtDate(iso){ try{ return new Date(iso).toLocaleString('es-EC',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});}catch{return iso||'';} }
+  function badge(tipo){ const c= tipo==='Propuesta'?'b-prop': tipo==='Queja o problema'?'b-queja':'b-otro'; return `<span class="badge ${c}">${tipo||''}</span>`; }
+  function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch])); }
+
+  // ---- arranque: cargar config ----
+  async function boot(){
+    let cfg; try{ cfg = await (await fetch('/api/config')).json(); }catch{ cfg={}; }
+    if(!cfg.url || !cfg.anonKey){ show($('#setupView')); return; }
+    db = window.supabase.createClient(cfg.url, cfg.anonKey);
+    const { data:{ session } } = await db.auth.getSession();
+    if(session) enterApp(session); else show($('#loginView'));
+  }
+
+  // ---- login ----
+  $('#loginBtn').addEventListener('click', async ()=>{
+    const email=$('#email').value.trim(), password=$('#password').value;
+    const m=$('#loginMsg'); m.textContent=''; m.className='msg';
+    if(!email||!password){ m.textContent='Completa correo y contraseña.'; m.className='msg err'; return; }
+    $('#loginBtn').disabled=true;
+    const { data, error } = await db.auth.signInWithPassword({ email, password });
+    $('#loginBtn').disabled=false;
+    if(error){ m.textContent='No se pudo entrar: '+error.message; m.className='msg err'; return; }
+    hide($('#loginView')); enterApp(data.session);
+  });
+  $('#password').addEventListener('keydown',e=>{ if(e.key==='Enter') $('#loginBtn').click(); });
+
+  $('#logoutBtn').addEventListener('click', async ()=>{ await db.auth.signOut(); location.reload(); });
+
+  function enterApp(session){
+    $('#whoami').textContent = session?.user?.email || '';
+    show($('#appView'));
+    // rango por defecto: últimos 7 días
+    const to=new Date(), from=new Date(Date.now()-6*864e5);
+    $('#fTo').value = to.toISOString().slice(0,10);
+    $('#fFrom').value = from.toISOString().slice(0,10);
+    loadRows();
+  }
+
+  // ---- datos ----
+  async function loadRows(){
+    const { data, error } = await db.from('submissions').select('*').order('created_at',{ascending:false}).limit(5000);
+    if(error){ toast('Error al cargar: '+error.message,false); return; }
+    rows = data||[];
+    fillFilterOptions();
+    render();
+  }
+  function fillFilterOptions(){
+    const temas=[...new Set(rows.map(r=>r.tema).filter(Boolean))].sort();
+    const sectores=[...new Set(rows.map(r=>r.sector).filter(Boolean))].sort();
+    $('#fTema').innerHTML='<option value="">Todos</option>'+temas.map(t=>`<option>${esc(t)}</option>`).join('');
+    $('#fSector').innerHTML='<option value="">Todos</option>'+sectores.map(s=>`<option>${esc(s)}</option>`).join('');
+  }
+
+  function filtered(){
+    const q=$('#fSearch').value.trim().toLowerCase(), tipo=$('#fTipo').value, tema=$('#fTema').value, sector=$('#fSector').value;
+    const from=$('#fFrom').value?new Date($('#fFrom').value+'T00:00:00'):null;
+    const to=$('#fTo').value?new Date($('#fTo').value+'T23:59:59'):null;
+    return rows.filter(r=>{
+      if(tipo && r.tipo!==tipo) return false;
+      if(tema && r.tema!==tema) return false;
+      if(sector && r.sector!==sector) return false;
+      const d=new Date(r.created_at);
+      if(from && d<from) return false;
+      if(to && d>to) return false;
+      if(q){ const hay=[r.detalle,r.nombre,r.referencia,r.tema,r.sector].join(' ').toLowerCase(); if(!hay.includes(q)) return false; }
+      return true;
+    });
+  }
+
+  function render(){
+    let list=filtered();
+    list.sort((a,b)=>{ let x=a[sortKey], y=b[sortKey]; if(sortKey==='created_at'){x=new Date(x);y=new Date(y);} if(x<y)return -1*sortDir; if(x>y)return 1*sortDir; return 0; });
+    $('#stTotal').textContent=list.length;
+    $('#stProp').textContent=list.filter(r=>r.tipo==='Propuesta').length;
+    $('#stQueja').textContent=list.filter(r=>r.tipo==='Queja o problema').length;
+    $('#stOtro').textContent=list.filter(r=>r.tipo==='Otro tema').length;
+    $('#tbody').innerHTML = list.map(r=>`<tr>
+      <td>${fmtDate(r.created_at)}</td>
+      <td>${badge(r.tipo)}</td>
+      <td>${esc(r.tema)}</td>
+      <td>${esc(r.sector)||'<span class="muted">—</span>'}</td>
+      <td>${esc(r.referencia)||'<span class="muted">—</span>'}</td>
+      <td class="detalle">${esc(r.detalle)}</td>
+      <td>${esc(r.nombre)||'<span class="muted">—</span>'}</td>
+      <td>${esc(r.celular)||'<span class="muted">—</span>'}</td>
+      <td>${r.consentimiento?'✅':'—'}</td>
+      <td>${r.evidencia_path?`<a href="#" data-foto="${esc(r.evidencia_path)}">ver</a>`:'<span class="muted">—</span>'}</td>
+    </tr>`).join('') || `<tr><td colspan="10" class="muted" style="padding:20px">Sin opiniones en este filtro.</td></tr>`;
+  }
+
+  // ordenar por encabezado
+  document.querySelectorAll('#tbl th[data-k]').forEach(th=>th.addEventListener('click',()=>{
+    const k=th.dataset.k; if(sortKey===k) sortDir*=-1; else {sortKey=k;sortDir=1;} render();
+  }));
+  ['fSearch','fTipo','fTema','fSector','fFrom','fTo'].forEach(id=>$('#'+id).addEventListener('input',render));
+  $('#reloadBtn').addEventListener('click',loadRows);
+
+  // ver foto (signed url)
+  $('#tbody').addEventListener('click', async e=>{
+    const a=e.target.closest('[data-foto]'); if(!a) return; e.preventDefault();
+    const { data, error } = await db.storage.from('evidencias').createSignedUrl(a.dataset.foto, 120);
+    if(error){ toast('No se pudo abrir la foto',false); return; }
+    window.open(data.signedUrl,'_blank','noopener');
+  });
+
+  // ---- CSV ----
+  $('#csvBtn').addEventListener('click',()=>{
+    const list=filtered();
+    const cols=['created_at','tipo','tema','sector','referencia','detalle','nombre','celular','consentimiento','evidencia_path'];
+    const head=['Fecha y hora','Tipo','Tema','Sector','Referencia','Detalle','Nombre','Celular','Consentimiento','Foto'];
+    const cell=v=>{ v=v==null?'':String(v); return /[",\n;]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
+    const csv=[head.join(','), ...list.map(r=>cols.map(c=> c==='created_at'?cell(fmtDate(r[c])):cell(r[c])).join(','))].join('\r\n');
+    const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`somos-aurora-opiniones-${new Date().toISOString().slice(0,10)}.csv`; a.click();
+  });
+
+  // ---- informe ----
+  $('#genBtn').addEventListener('click',()=>{
+    const list=filtered();
+    if(!list.length){ toast('No hay opiniones en el rango.',false); return; }
+    const byCat={}, bySec={};
+    list.forEach(r=>{ byCat[r.tema]=(byCat[r.tema]||0)+1; if(r.sector) bySec[r.sector]=(bySec[r.sector]||0)+1; });
+    const cats=Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
+    $('#catCounts').innerHTML = cats.slice(0,8).map(([k,v])=>`<div class="stat"><div class="n">${v}</div><div class="l">${esc(k)}</div></div>`).join('');
+
+    // top por frecuencia: por categoría más fuerte, el detalle más sustancial
+    generatedTop=[];
+    const seen=new Set();
+    for(const [cat] of cats){
+      const cand = list.filter(r=>r.tema===cat && r.detalle && r.detalle.length>=20)
+                       .sort((a,b)=>b.detalle.length-a.detalle.length);
+      for(const r of cand){ const key=r.detalle.slice(0,40).toLowerCase(); if(seen.has(key)) continue; seen.add(key);
+        generatedTop.push({ tipo:r.tipo, tema:r.tema, sector:r.sector||'', texto:r.detalle, autor_display: defaultAutor(r) });
+        break;
+      }
+      if(generatedTop.length>=10) break;
+    }
+    renderTop();
+    show($('#reportOut')); show($('#publishBtn'));
+  });
+  function defaultAutor(r){ return r.tipo==='Propuesta'?'Vecino de La Aurora': r.tipo==='Queja o problema'?'Residente':'Vecino de La Aurora'; }
+
+  function renderTop(){
+    $('#topList').innerHTML = generatedTop.map((t,i)=>`<div class="top-row" data-i="${i}">
+      <input type="number" value="${i+1}" min="1" data-f="rank" title="Orden">
+      <div><textarea data-f="texto">${esc(t.texto)}</textarea><div class="muted" style="font-size:12px;margin-top:4px">${esc(t.tipo)} · ${esc(t.tema)}${t.sector?' · '+esc(t.sector):''}</div></div>
+      <input data-f="autor_display" value="${esc(t.autor_display)}" title="Etiqueta pública">
+      <button class="btn ghost" data-del>Quitar</button>
+    </div>`).join('') || '<p class="muted">Sin candidatos (se necesitan detalles de 20+ caracteres).</p>';
+  }
+  $('#topList').addEventListener('click',e=>{ const del=e.target.closest('[data-del]'); if(!del) return; const i=+del.closest('.top-row').dataset.i; generatedTop.splice(i,1); renderTop(); });
+
+  function collectTop(){
+    const out=[];
+    document.querySelectorAll('#topList .top-row').forEach(row=>{
+      const i=+row.dataset.i; const base=generatedTop[i];
+      out.push({ ...base,
+        rank: +row.querySelector('[data-f=rank]').value||(i+1),
+        texto: row.querySelector('[data-f=texto]').value.trim(),
+        autor_display: row.querySelector('[data-f=autor_display]').value.trim()||'Vecino de La Aurora'
+      });
+    });
+    return out.filter(t=>t.texto).sort((a,b)=>a.rank-b.rank).map((t,idx)=>({...t,rank:idx+1}));
+  }
+
+  // ---- publicar ----
+  $('#publishBtn').addEventListener('click', async ()=>{
+    const top=collectTop();
+    if(!top.length){ toast('El top está vacío.',false); return; }
+    const list=filtered();
+    const byCat={}, bySec={};
+    list.forEach(r=>{ byCat[r.tema]=(byCat[r.tema]||0)+1; if(r.sector) bySec[r.sector]=(bySec[r.sector]||0)+1; });
+    $('#publishBtn').disabled=true;
+    const { data:rep, error:e1 } = await db.from('weekly_reports').insert({
+      week_start: $('#fFrom').value, week_end: $('#fTo').value,
+      total_opiniones: list.length, por_categoria: byCat, por_sector: bySec,
+      resumen: $('#resumen').value.trim()||null
+    }).select().single();
+    if(e1){ $('#publishBtn').disabled=false; toast('Error al crear informe: '+e1.message,false); return; }
+    const feats = top.map(t=>({ report_id: rep.id, rank:t.rank, tipo:t.tipo, tema:t.tema, sector:t.sector||null, texto:t.texto, autor_display:t.autor_display }));
+    const { error:e2 } = await db.from('featured_opinions').insert(feats);
+    $('#publishBtn').disabled=false;
+    if(e2){ toast('Error al publicar top: '+e2.message,false); return; }
+    toast('✅ Informe publicado. El top ya se ve en la web.');
+  });
+
+  // ---- purga ----
+  $('#confirmText').addEventListener('input',e=>{ $('#purgeBtn').disabled = e.target.value.trim()!=='BORRAR'; });
+  $('#purgeBtn').addEventListener('click', async ()=>{
+    if($('#confirmText').value.trim()!=='BORRAR') return;
+    const from=$('#fFrom').value+'T00:00:00', to=$('#fTo').value+'T23:59:59';
+    $('#purgeBtn').disabled=true;
+    // borrar fotos del rango
+    const { data:toDel } = await db.from('submissions').select('evidencia_path').gte('created_at',from).lte('created_at',to).not('evidencia_path','is',null);
+    const paths=(toDel||[]).map(r=>r.evidencia_path).filter(Boolean);
+    if(paths.length){ await db.storage.from('evidencias').remove(paths); }
+    const { error } = await db.from('submissions').delete().gte('created_at',from).lte('created_at',to);
+    if(error){ $('#purgeBtn').disabled=false; toast('Error al limpiar: '+error.message,false); return; }
+    $('#confirmText').value=''; toast('🧹 Limpieza hecha. Informes y top conservados.');
+    loadRows();
+  });
+
+  boot();
+})();
+</script>
+</body>
+</html>

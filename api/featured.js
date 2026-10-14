@@ -6,16 +6,16 @@ export const config = { runtime: "edge" };
 export default async function handler(request) {
   if (request.method !== "GET") return new Response("Método no permitido", { status: 405 });
   const env = process.env;
+  // Acepta tanto los nombres estándar como los que quedaron puestos en Vercel.
+  const SUPA_URL = env.SUPABASE_URL || env.ProjectURL || "";
+  const SUPA_ANON = env.SUPABASE_ANON_KEY || env.anonpublic || "";
   const headers = { "Content-Type": "application/json", "Cache-Control": "public, max-age=120" };
   try {
-    const h = {
-      apikey: env.SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${env.SUPABASE_ANON_KEY}`,
-    };
+    const h = { apikey: SUPA_ANON, Authorization: `Bearer ${SUPA_ANON}` };
 
     // 1) Informe más reciente
     const rep = await fetch(
-      `${env.SUPABASE_URL}/rest/v1/weekly_reports?select=id,week_start,week_end,created_at&order=created_at.desc&limit=1`,
+      `${SUPA_URL}/rest/v1/weekly_reports?select=id,week_start,week_end,created_at&order=created_at.desc&limit=1`,
       { headers: h }
     );
     const reports = rep.ok ? await rep.json() : [];
@@ -25,7 +25,7 @@ export default async function handler(request) {
 
     // 2) Su top, ordenado por rank
     const feat = await fetch(
-      `${env.SUPABASE_URL}/rest/v1/featured_opinions?report_id=eq.${report.id}` +
+      `${SUPA_URL}/rest/v1/featured_opinions?report_id=eq.${report.id}` +
         `&select=rank,tipo,tema,sector,texto,autor_display,created_at&order=rank.asc`,
       { headers: h }
     );

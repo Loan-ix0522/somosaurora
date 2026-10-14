@@ -7,6 +7,10 @@ export const config = { runtime: "edge" };
 export default async function handler(request) {
   if (request.method !== "POST") return json({ ok: false, error: "Método no permitido." }, 405);
   const env = process.env;
+  // Acepta tanto los nombres estándar como los que quedaron puestos en Vercel.
+  const SUPA_URL = env.SUPABASE_URL || env.ProjectURL || "";
+  const SUPA_SERVICE = env.SUPABASE_SERVICE_ROLE_KEY || env.service_role || "";
+  const IP_SALT = env.IP_SALT || "aurora";
   try {
     const form = await request.formData();
 
@@ -32,6 +36,10 @@ export default async function handler(request) {
     if (celular && !/^[0-9+\s-]{6,15}$/.test(celular))
                                 return json({ ok: false, error: "Celular inválido." }, 400);
 
+    // Si no hay URL/clave configuradas, avisamos claro (en vez de "Invalid URL").
+    if (!SUPA_URL || !SUPA_SERVICE)
+      return json({ ok: false, error: "El servidor no tiene configurada la conexión a la base de datos." }, 500);
+
     // Foto opcional → Supabase Storage (bucket privado "evidencias")
     let evidencia_path = null;
     const file = form.get("evidencia");
@@ -40,10 +48,10 @@ export default async function handler(request) {
       if (!/^image\//.test(file.type || "")) return json({ ok: false, error: "El archivo no es una imagen." }, 400);
       const ext = (file.name && file.name.includes(".")) ? file.name.split(".").pop().toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 5) : "jpg";
       const key = `${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.${ext || "jpg"}`;
-      const up = await fetch(`${env.SUPABASE_URL}/storage/v1/object/evidencias/${key}`, {
+      const up = await fetch(`${SUPA_URL}/storage/v1/object/evidencias/${key}`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+          Authorization: `Bearer ${SUPA_SERVICE}`,
           "Content-Type": file.type || "application/octet-stream",
           "x-upsert": "true",
         },
@@ -54,7 +62,7 @@ export default async function handler(request) {
 
     // Hash de IP (anti-abuso). No guardamos la IP cruda.
     const ip = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim();
-    const ip_hash = ip ? await sha256(ip + "|" + (env.IP_SALT || "aurora")) : null;
+    const ip_hash = ip ? await sha256(ip + "|" + IP_SALT) : null;
 
     const row = {
       tipo, tema,
@@ -68,11 +76,11 @@ export default async function handler(request) {
       ip_hash,
     };
 
-    const ins = await fetch(`${env.SUPABASE_URL}/rest/v1/submissions`, {
+    const ins = await fetch(`${SUPA_URL}/rest/v1/submissions`, {
       method: "POST",
       headers: {
-        apikey: env.SUPABASE_SERVICE_ROLE_KEY,
-        Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+        apikey: SUPA_SERVICE,
+        Authorization: `Bearer ${SUPA_SERVICE}`,
         "Content-Type": "application/json",
         Prefer: "return=minimal",
       },

@@ -45,7 +45,7 @@
   .tablebox{overflow:auto;border:1px solid #cdd9e7;border-radius:12px;max-height:calc(100vh - 250px);min-height:300px;background:#fff;outline:0}
   .tablebox:focus-visible{border-color:var(--blue2);box-shadow:0 0 0 3px rgba(11,101,199,.14)}
   .tablebox.compact{max-height:none;min-height:0}
-  table.xl{border-collapse:separate;border-spacing:0;width:100%;min-width:1980px;table-layout:fixed;font-size:14px;color:var(--ink)}
+  table.xl{border-collapse:separate;border-spacing:0;width:100%;min-width:2112px;table-layout:fixed;font-size:14px;color:var(--ink)}
   table.xl.xl-pick{min-width:1100px}
   .xl th,.xl td{height:50px;padding:0 16px;border-right:1px solid #e4ecf5;border-bottom:1px solid #e4ecf5;text-align:left;vertical-align:middle;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .xl th:last-child,.xl td:last-child{border-right:0}
@@ -73,10 +73,14 @@
   .xl tr:hover .open,.xl tr.sel .open,.open:focus-visible{opacity:1}
   @media(hover:none){.open{opacity:1}}
   .xl .yes{color:var(--green);font-weight:700}
+  .b-gest{background:#e8eefc;color:#2a4db3}
+  .xl .due{color:var(--red);font-weight:700}.xl .soon{color:#b45309;font-weight:700}
   .badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700}
   .b-prop{background:#fff1e6;color:#c45500}.b-queja{background:#e7f1ff;color:#0d79ef}.b-otro{background:#e9f9ea;color:#0a7d1c}
   .muted{color:var(--muted)}.right{text-align:right}
   .hidden{display:none}
+  .ret{background:var(--soft);border:1px solid var(--line);border-radius:14px;padding:18px 22px;margin:6px 0 16px;font-size:14px;line-height:1.55}
+  .ret-st{margin:0;font-size:13.5px;color:var(--muted)}.ret-st.bad{color:var(--red);font-weight:600}.ret-st b{color:var(--ink)}
   .danger{background:#fff4f3;border:1px solid #f3c6c2;border-radius:14px;padding:20px 22px;margin-top:6px}
   /* destacar en la web (carrusel semanal) */
   .pick{position:relative;display:inline-grid;place-items:center;width:32px;height:32px;border-radius:9px;border:1.5px solid var(--line);background:#fff;color:#c3cedb;font-size:17px;line-height:1;cursor:pointer;vertical-align:middle}
@@ -203,7 +207,7 @@
       <div class="tablebox" id="tbox" tabindex="0" aria-label="Hoja de opiniones recibidas">
         <table id="tbl" class="xl">
           <colgroup>
-            <col style="width:56px"><col style="width:60px"><col style="width:192px"><col style="width:176px"><col style="width:214px"><col><col style="width:150px"><col style="width:210px"><col style="width:160px"><col style="width:140px"><col style="width:96px"><col style="width:84px">
+            <col style="width:56px"><col style="width:60px"><col style="width:192px"><col style="width:176px"><col style="width:214px"><col><col style="width:150px"><col style="width:210px"><col style="width:160px"><col style="width:140px"><col style="width:96px"><col style="width:132px"><col style="width:84px">
           </colgroup>
           <thead><tr>
             <th class="c-star" title="Destacar en el carrusel de la web">★</th>
@@ -217,6 +221,7 @@
             <th data-k="nombre">Nombre<i class="srt"></i></th>
             <th data-k="celular">Celular<i class="srt"></i></th>
             <th data-k="consentimiento">Consent.<i class="srt"></i></th>
+            <th title="Las opiniones se borran solas a los 30 días, salvo las marcadas En gestión">Se borra</th>
             <th>Foto</th>
           </tr></thead>
           <tbody id="tbody"></tbody>
@@ -245,8 +250,12 @@
     <!-- ZONA PELIGRO -->
     <div class="panel">
       <h2>Archivar y limpiar</h2>
+      <div class="ret">
+        <p style="margin:0 0 8px"><b>Limpieza automática a los 30 días.</b> Cada noche (02:00, hora de Ecuador) se borran las opiniones recibidas hace más de 30 días, junto con sus fotos. No se tocan los informes ni las opiniones destacadas, ni las que marques <b>En gestión</b> (ábrelas con doble clic).</p>
+        <p class="ret-st" id="retStatus">Consultando…</p>
+      </div>
       <div class="danger">
-        <p style="margin:0 0 10px"><b>Borra las opiniones crudas</b> del rango seleccionado (y sus fotos) para mantener la base liviana. <b>Conserva</b> los informes y el top publicado.</p>
+        <p style="margin:0 0 6px"><b>Limpieza manual, antes de tiempo.</b> Borra ahora las opiniones del rango seleccionado (y sus fotos). <b>Conserva</b> los informes, el top publicado y las opiniones en gestión.</p>
         <p class="muted" style="font-size:13px;margin:0 0 14px">Primero genera y publica el informe. Esta acción no se puede deshacer.</p>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
           <input id="confirmText" placeholder='Escribe BORRAR para confirmar' style="max-width:280px">
@@ -276,6 +285,48 @@
   function badge(tipo){ const c= tipo==='Propuesta'?'b-prop': tipo==='Queja o problema'?'b-queja':'b-otro'; return `<span class="badge ${c}">${esc(tipo)}</span>`; }
   function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch])); }
   const tone=t=>t==='Propuesta'?'prop':t==='Queja o problema'?'queja':'otro';
+  // Retención: las opiniones se borran solas a los 30 días (api/purge.js), salvo las "en gestión".
+  const RETENCION=30;
+  let retCol=null; // true/false cuando loadRetention comprobó si existe la columna en_gestion
+  const hasRet=()=>retCol!==null?retCol:(rows.length>0&&'en_gestion' in rows[0]); // false si falta aplicar la migración 0003
+  const diasRestantes=r=>RETENCION-Math.floor((Date.now()-new Date(r.created_at))/864e5);
+  function borraTxt(r){
+    if(!hasRet()) return '<span class="muted">—</span>';
+    if(r.en_gestion) return '<span class="badge b-gest">En gestión</span>';
+    const d=diasRestantes(r);
+    return d<=0?'<span class="due">vence hoy</span>':d<=5?`<span class="soon">en ${d} d</span>`:`en ${d} d`;
+  }
+  const fmtDay2=d=>new Date(d).toLocaleDateString('es-EC',{day:'numeric',month:'short',year:'numeric'});
+  function borraLargo(r){
+    if(r.en_gestion) return 'No se borra sola: en gestión'+(r.en_gestion_desde?' desde el '+fmtDay2(r.en_gestion_desde):'')+'.';
+    const d=diasRestantes(r), cuando=fmtDay2(new Date(r.created_at).getTime()+RETENCION*864e5);
+    return d<=0?'En la próxima limpieza (esta noche).':`Hacia el ${cuando} (en ${d} ${d===1?'día':'días'}).`;
+  }
+  async function setGestion(r,v){
+    if(!v&&diasRestantes(r)<=0&&!confirm('Esta opinión ya pasó los 30 días. Si la quitas de gestión se borrará en la próxima limpieza (esta noche). ¿Continuar?')) return;
+    const patch={ en_gestion:v, en_gestion_desde:v?new Date().toISOString():null };
+    const { error } = await db.from('submissions').update(patch).eq('id',r.id);
+    if(error){ toast(/en_gestion|column/i.test(error.message)?'Falta aplicar la migración 0003 en Supabase.':'No se pudo guardar: '+error.message,false); return; }
+    Object.assign(r,patch); render(); syncWins(); loadRetention();
+    toast(v?'Marcada En gestión: no se borrará sola.':'Quitada de gestión: se borrará a los 30 días de recibida.');
+  }
+  // estado de la limpieza automática (bitácora que escribe api/purge.js)
+  async function loadRetention(){
+    const box=$('#retStatus'); if(!box) return;
+    box.classList.remove('bad');
+    const cnt=await db.from('submissions').select('id',{count:'exact',head:true}).eq('en_gestion',true);
+    const log=await db.from('purga_log').select('ejecutada_en,opiniones,fotos,error').order('ejecutada_en',{ascending:false}).limit(1);
+    const antes=retCol; retCol=!cnt.error; if(antes!==retCol) render();
+    if(cnt.error||log.error){ box.classList.add('bad'); box.textContent='Aún no está activada: falta aplicar la migración 0003 en Supabase (y poner CRON_SECRET en Vercel).'; return; }
+    const g=cnt.count||0, tail=` · ${g} ${g===1?'opinión':'opiniones'} en gestión.`;
+    const last=(log.data||[])[0];
+    if(!last){ box.innerHTML='Todavía no se ha ejecutado ninguna limpieza. Si pasa más de un día, revisa que <b>CRON_SECRET</b> esté en Vercel. Opiniones en gestión: '+g+'.'; return; }
+    const cuando=new Date(last.ejecutada_en).toLocaleString('es-EC',{timeZone:'America/Guayaquil',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+    const viejo=Date.now()-new Date(last.ejecutada_en)>36*36e5;
+    if(last.error){ box.classList.add('bad'); box.textContent=`Última limpieza: ${cuando}, con error: ${last.error}`+tail; return; }
+    box.innerHTML=`Última limpieza: <b>${esc(cuando)}</b> — ${last.opiniones} ${last.opiniones===1?'opinión':'opiniones'} y ${last.fotos} ${last.fotos===1?'foto':'fotos'} borradas`+esc(tail)+(viejo?' <span class="due">Hace más de un día que no corre: revisa Vercel → Cron Jobs.</span>':'');
+    if(viejo) box.classList.add('bad');
+  }
   const dash='<span class="muted">—</span>';
   const SV=d=>`<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
   const I_MIN=SV('<path d="M6 12h12"/>'), I_MAX=SV('<rect x="6" y="6" width="12" height="12" rx="1.8"/>'),
@@ -325,7 +376,7 @@
     $('#fFrom').value = from.toISOString().slice(0,10);
     loadRows();
     renderPicks();
-    loadLive();
+    loadLive(); loadRetention();
   }
 
   // ---- datos ----
@@ -383,8 +434,9 @@
       <td title="${esc(r.nombre)}">${esc(r.nombre)||dash}</td>
       <td>${esc(r.celular)||dash}</td>
       <td>${r.consentimiento?'<span class="yes">Sí</span>':dash}</td>
+      <td>${borraTxt(r)}</td>
       <td>${r.evidencia_path?`<a href="#" data-foto="${esc(r.evidencia_path)}">ver</a>`:dash}</td>
-    </tr>`; }).join('') || `<tr><td colspan="12" class="muted" style="height:90px;padding:0 24px">Sin opiniones en este filtro.</td></tr>`;
+    </tr>`; }).join('') || `<tr><td colspan="13" class="muted" style="height:90px;padding:0 24px">Sin opiniones en este filtro.</td></tr>`;
     syncWins();
   }
 
@@ -528,6 +580,7 @@
           <div class="kv"><span>Tema</span><b>${esc(r.tema)||'—'}</b></div>
           <div class="kv"><span>Sector</span><b>${esc(r.sector)||'—'}</b></div>
           <div class="kv wide"><span>Referencia</span><b>${esc(r.referencia)||'—'}</b></div>
+          ${hasRet()?`<div class="kv wide" data-ret><span>Retención</span><b>${esc(borraLargo(r))}</b></div>`:''}
         </div>
         <div class="op-text">${esc(r.detalle)}</div>
         <div class="kv-grid" style="margin:0">
@@ -536,11 +589,17 @@
           <div class="kv"><span>Consentimiento</span><b>${r.consentimiento?'Sí':'—'}</b></div>
         </div></div>`,
       foot:`<button type="button" class="btn ghost sm" data-act="pick">★ Destacar en la web</button>`+
+           (hasRet()?`<button type="button" class="btn ghost sm" data-act="gest"></button>`:'')+
            (r.evidencia_path?`<button type="button" class="btn ghost sm" data-act="foto">Ver foto</button>`:'')+
            `<button type="button" class="btn ghost sm" data-act="copy">Copiar texto</button>`,
-      sync(w){ const b=w.el.querySelector('[data-act=pick]'), on=isPicked(r.id); b.textContent=on?'★ Quitar de la web':'★ Destacar en la web'; b.classList.toggle('on',on); b.disabled=!on&&picked.length>=MAX_PICK; },
+      sync(w){
+        const b=w.el.querySelector('[data-act=pick]'), on=isPicked(r.id); b.textContent=on?'★ Quitar de la web':'★ Destacar en la web'; b.classList.toggle('on',on); b.disabled=!on&&picked.length>=MAX_PICK;
+        const g=w.el.querySelector('[data-act=gest]'); if(g){ g.textContent=r.en_gestion?'Quitar de gestión':'Mantener en gestión'; g.classList.toggle('on',!!r.en_gestion); }
+        const k=w.el.querySelector('[data-ret] b'); if(k) k.textContent=borraLargo(r);
+      },
       act(name){
         if(name==='pick') togglePick(r.id);
+        else if(name==='gest') setGestion(r,!r.en_gestion);
         else if(name==='foto') openFoto(r.evidencia_path);
         else if(name==='copy'){ (navigator.clipboard?navigator.clipboard.writeText(r.detalle||''):Promise.reject()).then(()=>toast('Texto copiado.'),()=>toast('No se pudo copiar.',false)); }
       }
@@ -698,13 +757,15 @@
     const from=$('#fFrom').value+'T00:00:00', to=$('#fTo').value+'T23:59:59';
     $('#purgeBtn').disabled=true;
     // borrar fotos del rango
-    const { data:toDel } = await db.from('submissions').select('evidencia_path').gte('created_at',from).lte('created_at',to).not('evidencia_path','is',null);
+    // las opiniones "en gestión" no se tocan (si la migración 0003 ya está aplicada)
+    const ret=hasRet(), noGest=q=>ret?q.eq('en_gestion',false):q;
+    const { data:toDel } = await noGest(db.from('submissions').select('evidencia_path').gte('created_at',from).lte('created_at',to).not('evidencia_path','is',null));
     const paths=(toDel||[]).map(r=>r.evidencia_path).filter(Boolean);
     if(paths.length){ await db.storage.from('evidencias').remove(paths); }
-    const { error } = await db.from('submissions').delete().gte('created_at',from).lte('created_at',to);
+    const { error } = await noGest(db.from('submissions').delete().gte('created_at',from).lte('created_at',to));
     if(error){ $('#purgeBtn').disabled=false; toast('Error al limpiar: '+error.message,false); return; }
-    $('#confirmText').value=''; toast('Limpieza hecha. Informes y top conservados.');
-    loadRows();
+    $('#confirmText').value=''; toast('Limpieza hecha. Informes, top y opiniones en gestión conservados.');
+    loadRows(); loadRetention();
   });
 
   boot();

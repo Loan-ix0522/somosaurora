@@ -1,5 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    { "path": "/api/purge", "schedule": "0 7 * * *" }
+  ],
   "redirects": [
     { "source": "/avisos-legales", "destination": "/politica-datos.html", "permanent": true },
     { "source": "/avisos-legales.html", "destination": "/politica-datos.html", "permanent": true }

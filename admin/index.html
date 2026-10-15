@@ -50,6 +50,17 @@
   .top-row textarea{min-height:60px;resize:vertical}
   .hidden{display:none}
   .danger{background:#fff4f3;border:1px solid #f3c6c2;border-radius:12px;padding:14px;margin-top:10px}
+  /* destacar en la web (carrusel semanal) */
+  .pick{position:relative;display:inline-grid;place-items:center;width:30px;height:30px;border-radius:8px;border:1.5px solid var(--line);background:#fff;color:#c3cedb;font-size:17px;line-height:1;cursor:pointer}
+  .pick input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
+  .pick.on{background:#fff4ec;border-color:var(--orange);color:var(--orange)}
+  .pick.off{opacity:.35}.pick.off input{cursor:not-allowed}
+  .pick:focus-within{outline:2px solid var(--blue2);outline-offset:2px}
+  tr.picked td{background:#fff8f2}
+  .pill{display:inline-block;margin-left:8px;padding:3px 10px;border-radius:999px;background:#eef4fb;color:var(--blue);font:800 12px/1.2 'DM Sans';vertical-align:middle}
+  .pill.full{background:#e9f9ea;color:#0a7d1c}
+  .live-now{border:1px dashed #c9d7e6;border-radius:12px;padding:10px 14px;font-size:13px;color:var(--muted);margin-top:10px}
+  .live-now ol{margin:6px 0 0;padding-left:20px;color:var(--ink)}.live-now li{margin:3px 0}
   @media(max-width:640px){.top-row{grid-template-columns:1fr}}
 </style>
 </head>
@@ -109,6 +120,7 @@
       <div class="tablebox">
         <table id="tbl">
           <thead><tr>
+            <th title="Destacar en el carrusel de la web">★</th>
             <th data-k="created_at">Fecha y hora</th>
             <th data-k="tipo">Tipo</th>
             <th data-k="tema">Tema</th>
@@ -126,20 +138,20 @@
       <p class="muted" style="font-size:12px;margin-top:8px">Tip: clic en un encabezado para ordenar.</p>
     </div>
 
-    <!-- INFORME SEMANAL -->
+    <!-- OPINIONES DE LA SEMANA EN LA WEB (carrusel) -->
     <div class="panel">
-      <h2>Informe semanal (por frecuencia)</h2>
-      <p class="muted" style="font-size:14px;margin-top:-6px">Usa el rango de fechas de arriba (por defecto, últimos 7 días). Calcula conteos y propone el top; puedes editarlo antes de publicar.</p>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0">
-        <button id="genBtn" class="btn">Generar informe</button>
-        <button id="publishBtn" class="btn green hidden">Publicar top en la web</button>
+      <h2>Opiniones de la semana en la web <span id="pickCount" class="pill">0/5</span></h2>
+      <p class="muted" style="font-size:14px;margin-top:-6px">Marca con <b style="color:var(--orange)">★</b> hasta 5 opiniones en la tabla de arriba (usa el rango de fechas de la semana). Al publicar, reemplazan a las que hoy se ven en el carrusel de la portada y quedan ahí hasta la próxima publicación.</p>
+      <div id="liveNow" class="live-now">Cargando lo que se ve hoy en la portada…</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0">
+        <button id="genBtn" class="btn ghost">Sugerir por frecuencia</button>
+        <button id="clearPicksBtn" class="btn ghost">Quitar selección</button>
+        <button id="publishBtn" class="btn green" disabled>Publicar en la web</button>
       </div>
-      <div id="reportOut" class="hidden">
-        <div class="grid" id="catCounts"></div>
-        <h3 style="font-size:15px;color:var(--blue);margin:14px 0 8px">Top propuesto (edítalo):</h3>
-        <div id="topList"></div>
-        <div class="field" style="margin-top:12px"><label style="font-weight:700;font-size:13px">Resumen del informe (opcional)</label><textarea id="resumen" rows="2" placeholder="Ej.: Esta semana predominaron los temas de basura y alumbrado…"></textarea></div>
-      </div>
+      <div class="grid hidden" id="catCounts"></div>
+      <h3 style="font-size:15px;color:var(--blue);margin:14px 0 8px">Elegidas (puedes editar el texto público y el orden):</h3>
+      <div id="topList"></div>
+      <div class="field" style="margin-top:12px"><label style="font-weight:700;font-size:13px">Resumen del informe (opcional)</label><textarea id="resumen" rows="2" placeholder="Ej.: Esta semana predominaron los temas de basura y alumbrado…"></textarea></div>
     </div>
 
     <!-- ZONA PELIGRO -->
@@ -165,7 +177,8 @@
   const $ = (s)=>document.querySelector(s);
   const show = (el)=>el.classList.remove('hidden');
   const hide = (el)=>el.classList.add('hidden');
-  let db=null, rows=[], sortKey='created_at', sortDir=-1, generatedTop=[];
+  let db=null, rows=[], sortKey='created_at', sortDir=-1, picked=[];
+  const MAX_PICK=5; // opiniones por semana en el carrusel de la portada
 
   function toast(msg, ok=true){ const t=$('#toast'); t.textContent=msg; t.style.display='block'; t.style.color= ok?'var(--green)':'var(--red)'; setTimeout(()=>t.style.display='none', 3200); }
   function fmtDate(iso){ try{ return new Date(iso).toLocaleString('es-EC',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});}catch{return iso||'';} }
@@ -196,7 +209,16 @@
 
   $('#logoutBtn').addEventListener('click', async ()=>{ await db.auth.signOut(); location.reload(); });
 
-  function enterApp(session){
+  async function enterApp(session){
+    // Con la migración 0002 aplicada solo entran los correos de la tabla `admins`.
+    // Si la función aún no existe (migración pendiente), no se bloquea el acceso.
+    const { data:isAdmin, error:adminErr } = await db.rpc('is_admin');
+    if(!adminErr && isAdmin===false){
+      await db.auth.signOut();
+      hide($('#appView')); show($('#loginView'));
+      const m=$('#loginMsg'); m.textContent='Esta cuenta no tiene permisos de administrador.'; m.className='msg err';
+      return;
+    }
     $('#whoami').textContent = session?.user?.email || '';
     show($('#appView'));
     // rango por defecto: últimos 7 días
@@ -204,6 +226,8 @@
     $('#fTo').value = to.toISOString().slice(0,10);
     $('#fFrom').value = from.toISOString().slice(0,10);
     loadRows();
+    renderPicks();
+    loadLive();
   }
 
   // ---- datos ----
@@ -244,7 +268,9 @@
     $('#stProp').textContent=list.filter(r=>r.tipo==='Propuesta').length;
     $('#stQueja').textContent=list.filter(r=>r.tipo==='Queja o problema').length;
     $('#stOtro').textContent=list.filter(r=>r.tipo==='Otro tema').length;
-    $('#tbody').innerHTML = list.map(r=>`<tr>
+    const full = picked.length>=MAX_PICK;
+    $('#tbody').innerHTML = list.map(r=>{ const on=isPicked(r.id); return `<tr class="${on?'picked':''}">
+      <td><label class="pick ${on?'on':full?'off':''}" title="${on?'Quitar de la web':full?'Ya elegiste 5':'Destacar en la web'}"><input type="checkbox" data-pick="${esc(r.id)}" ${on?'checked':''} ${!on&&full?'disabled':''} aria-label="Destacar en la web"><span aria-hidden="true">★</span></label></td>
       <td>${fmtDate(r.created_at)}</td>
       <td>${badge(r.tipo)}</td>
       <td>${esc(r.tema)}</td>
@@ -255,7 +281,7 @@
       <td>${esc(r.celular)||'<span class="muted">—</span>'}</td>
       <td>${r.consentimiento?'✅':'—'}</td>
       <td>${r.evidencia_path?`<a href="#" data-foto="${esc(r.evidencia_path)}">ver</a>`:'<span class="muted">—</span>'}</td>
-    </tr>`).join('') || `<tr><td colspan="10" class="muted" style="padding:20px">Sin opiniones en este filtro.</td></tr>`;
+    </tr>`; }).join('') || `<tr><td colspan="11" class="muted" style="padding:20px">Sin opiniones en este filtro.</td></tr>`;
   }
 
   // ordenar por encabezado
@@ -284,62 +310,92 @@
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`somos-aurora-opiniones-${new Date().toISOString().slice(0,10)}.csv`; a.click();
   });
 
-  // ---- informe ----
+  // ---- opiniones de la semana (carrusel de la portada) ----
+  function defaultAutor(r){ return r.tipo==='Propuesta'?'Vecino de La Aurora': r.tipo==='Queja o problema'?'Residente':'Vecino de La Aurora'; }
+  function isPicked(id){ return picked.some(p=>p.id===String(id)); }
+  function fromRow(r){ return { id:String(r.id), tipo:r.tipo, tema:r.tema, sector:r.sector||'', texto:r.detalle, autor_display:defaultAutor(r) }; }
+  function countBy(list){ const byCat={}, bySec={}; list.forEach(r=>{ byCat[r.tema]=(byCat[r.tema]||0)+1; if(r.sector) bySec[r.sector]=(bySec[r.sector]||0)+1; }); return { byCat, bySec }; }
+
+  // marcar / desmarcar ★ en la tabla
+  $('#tbody').addEventListener('change',e=>{
+    const cb=e.target.closest('input[data-pick]'); if(!cb) return;
+    const id=cb.dataset.pick;
+    if(cb.checked){
+      if(picked.length>=MAX_PICK){ cb.checked=false; toast('Máximo 5 opiniones por semana.',false); return; }
+      const r=rows.find(x=>String(x.id)===id); if(r) picked.push(fromRow(r));
+    } else picked=picked.filter(p=>p.id!==id);
+    render(); renderPicks();
+  });
+
+  function renderPicks(){
+    const n=picked.length;
+    $('#pickCount').textContent=`${n}/${MAX_PICK}`; $('#pickCount').classList.toggle('full', n===MAX_PICK);
+    $('#publishBtn').disabled=!n;
+    $('#publishBtn').textContent = n ? `Publicar ${n} en la web` : 'Publicar en la web';
+    $('#topList').innerHTML = picked.map((t,i)=>`<div class="top-row" data-i="${i}">
+      <input type="number" value="${i+1}" min="1" max="${MAX_PICK}" data-f="rank" title="Orden en el carrusel" aria-label="Orden en el carrusel">
+      <div><textarea data-f="texto" aria-label="Texto público">${esc(t.texto)}</textarea><div class="muted" style="font-size:12px;margin-top:4px">${esc(t.tipo)} · ${esc(t.tema)}${t.sector?' · '+esc(t.sector):''} — revisa que no incluya nombres, placas ni números de casa.</div></div>
+      <input data-f="autor_display" value="${esc(t.autor_display)}" title="Etiqueta pública" aria-label="Etiqueta pública">
+      <button class="btn ghost" data-del>Quitar</button>
+    </div>`).join('') || '<p class="muted" style="margin:0">Aún no elegiste opiniones. Márcalas con ★ en la tabla o usa “Sugerir por frecuencia”.</p>';
+  }
+  // los cambios de texto/etiqueta se guardan al escribir (no se pierden al marcar otra ★)
+  $('#topList').addEventListener('input',e=>{ const f=e.target.dataset.f; if(!f||f==='rank') return; const i=+e.target.closest('.top-row').dataset.i; if(picked[i]) picked[i][f]=e.target.value; });
+  $('#topList').addEventListener('click',e=>{ const del=e.target.closest('[data-del]'); if(!del) return; const i=+del.closest('.top-row').dataset.i; picked.splice(i,1); render(); renderPicks(); });
+  $('#clearPicksBtn').addEventListener('click',()=>{ picked=[]; render(); renderPicks(); });
+
+  // sugerencia por frecuencia: completa los espacios libres (1 por tema, la más detallada)
   $('#genBtn').addEventListener('click',()=>{
     const list=filtered();
     if(!list.length){ toast('No hay opiniones en el rango.',false); return; }
-    const byCat={}, bySec={};
-    list.forEach(r=>{ byCat[r.tema]=(byCat[r.tema]||0)+1; if(r.sector) bySec[r.sector]=(bySec[r.sector]||0)+1; });
-    const cats=Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
+    const cats=Object.entries(countBy(list).byCat).sort((a,b)=>b[1]-a[1]);
     $('#catCounts').innerHTML = cats.slice(0,8).map(([k,v])=>`<div class="stat"><div class="n">${v}</div><div class="l">${esc(k)}</div></div>`).join('');
-
-    // top por frecuencia: por categoría más fuerte, el detalle más sustancial
-    generatedTop=[];
-    const seen=new Set();
+    show($('#catCounts'));
+    const seen=new Set(picked.map(p=>p.texto.slice(0,40).toLowerCase()));
     for(const [cat] of cats){
-      const cand = list.filter(r=>r.tema===cat && r.detalle && r.detalle.length>=20)
+      if(picked.length>=MAX_PICK) break;
+      if(picked.some(p=>p.tema===cat)) continue;
+      const cand = list.filter(r=>r.tema===cat && r.detalle && r.detalle.length>=20 && !isPicked(r.id))
                        .sort((a,b)=>b.detalle.length-a.detalle.length);
-      for(const r of cand){ const key=r.detalle.slice(0,40).toLowerCase(); if(seen.has(key)) continue; seen.add(key);
-        generatedTop.push({ tipo:r.tipo, tema:r.tema, sector:r.sector||'', texto:r.detalle, autor_display: defaultAutor(r) });
-        break;
-      }
-      if(generatedTop.length>=10) break;
+      for(const r of cand){ const key=r.detalle.slice(0,40).toLowerCase(); if(seen.has(key)) continue; seen.add(key); picked.push(fromRow(r)); break; }
     }
-    renderTop();
-    show($('#reportOut')); show($('#publishBtn'));
+    render(); renderPicks();
+    if(!picked.length) toast('Sin candidatos (se necesitan detalles de 20+ caracteres).',false);
   });
-  function defaultAutor(r){ return r.tipo==='Propuesta'?'Vecino de La Aurora': r.tipo==='Queja o problema'?'Residente':'Vecino de La Aurora'; }
-
-  function renderTop(){
-    $('#topList').innerHTML = generatedTop.map((t,i)=>`<div class="top-row" data-i="${i}">
-      <input type="number" value="${i+1}" min="1" data-f="rank" title="Orden">
-      <div><textarea data-f="texto">${esc(t.texto)}</textarea><div class="muted" style="font-size:12px;margin-top:4px">${esc(t.tipo)} · ${esc(t.tema)}${t.sector?' · '+esc(t.sector):''}</div></div>
-      <input data-f="autor_display" value="${esc(t.autor_display)}" title="Etiqueta pública">
-      <button class="btn ghost" data-del>Quitar</button>
-    </div>`).join('') || '<p class="muted">Sin candidatos (se necesitan detalles de 20+ caracteres).</p>';
-  }
-  $('#topList').addEventListener('click',e=>{ const del=e.target.closest('[data-del]'); if(!del) return; const i=+del.closest('.top-row').dataset.i; generatedTop.splice(i,1); renderTop(); });
 
   function collectTop(){
     const out=[];
     document.querySelectorAll('#topList .top-row').forEach(row=>{
-      const i=+row.dataset.i; const base=generatedTop[i];
+      const i=+row.dataset.i; const base=picked[i];
       out.push({ ...base,
         rank: +row.querySelector('[data-f=rank]').value||(i+1),
         texto: row.querySelector('[data-f=texto]').value.trim(),
         autor_display: row.querySelector('[data-f=autor_display]').value.trim()||'Vecino de La Aurora'
       });
     });
-    return out.filter(t=>t.texto).sort((a,b)=>a.rank-b.rank).map((t,idx)=>({...t,rank:idx+1}));
+    return out.filter(t=>t.texto).sort((a,b)=>a.rank-b.rank).slice(0,MAX_PICK).map((t,idx)=>({...t,rank:idx+1}));
+  }
+
+  // lo que se ve hoy en la portada
+  function fmtDay(d){ try{ return new Date(d+'T00:00:00').toLocaleDateString('es-EC',{day:'numeric',month:'short'}); }catch{ return d||''; } }
+  async function loadLive(){
+    const box=$('#liveNow');
+    const { data:rep, error } = await db.from('weekly_reports').select('id,week_start,week_end').order('created_at',{ascending:false}).limit(1);
+    if(error){ box.textContent='No se pudo consultar lo publicado.'; return; }
+    if(!rep||!rep.length){ box.innerHTML='En la portada ahora: <b>opiniones de ejemplo</b> (aún no se ha publicado ninguna semana).'; return; }
+    const { data:items } = await db.from('featured_opinions').select('rank,texto,autor_display').eq('report_id',rep[0].id).order('rank').limit(MAX_PICK);
+    const cut=s=>s.length>110?s.slice(0,110)+'…':s;
+    box.innerHTML=`En la portada ahora · semana del ${esc(fmtDay(rep[0].week_start))} al ${esc(fmtDay(rep[0].week_end))}:`+
+      (items&&items.length ? `<ol>${items.map(i=>`<li>${esc(cut(i.texto))} <span class="muted">— ${esc(i.autor_display)}</span></li>`).join('')}</ol>` : ' <b>sin opiniones</b>.');
   }
 
   // ---- publicar ----
   $('#publishBtn').addEventListener('click', async ()=>{
     const top=collectTop();
-    if(!top.length){ toast('El top está vacío.',false); return; }
-    const list=filtered();
-    const byCat={}, bySec={};
-    list.forEach(r=>{ byCat[r.tema]=(byCat[r.tema]||0)+1; if(r.sector) bySec[r.sector]=(bySec[r.sector]||0)+1; });
+    if(!top.length){ toast('Elige al menos una opinión.',false); return; }
+    const aviso=(top.length<MAX_PICK?`Elegiste ${top.length} de ${MAX_PICK}. `:'')+'Reemplazarán a las opiniones que hoy se ven en la portada. ¿Publicar?';
+    if(!confirm(aviso)) return;
+    const list=filtered(); const { byCat, bySec }=countBy(list);
     $('#publishBtn').disabled=true;
     const { data:rep, error:e1 } = await db.from('weekly_reports').insert({
       week_start: $('#fFrom').value, week_end: $('#fTo').value,
@@ -349,9 +405,13 @@
     if(e1){ $('#publishBtn').disabled=false; toast('Error al crear informe: '+e1.message,false); return; }
     const feats = top.map(t=>({ report_id: rep.id, rank:t.rank, tipo:t.tipo, tema:t.tema, sector:t.sector||null, texto:t.texto, autor_display:t.autor_display }));
     const { error:e2 } = await db.from('featured_opinions').insert(feats);
-    $('#publishBtn').disabled=false;
-    if(e2){ toast('Error al publicar top: '+e2.message,false); return; }
-    toast('✅ Informe publicado. El top ya se ve en la web.');
+    if(e2){
+      // sin destacadas, la portada quedaría vacía: se deshace el informe recién creado
+      await db.from('weekly_reports').delete().eq('id', rep.id);
+      $('#publishBtn').disabled=false; toast('Error al publicar: '+e2.message,false); return;
+    }
+    picked=[]; render(); renderPicks(); loadLive();
+    toast('Publicado. El carrusel de la portada ya muestra las opiniones de esta semana.');
   });
 
   // ---- purga ----

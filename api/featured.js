@@ -23,10 +23,10 @@ export default async function handler(request) {
 
     const report = reports[0];
 
-    // 2) Su top, ordenado por rank
+    // 2) Sus destacadas (máx. 5, las del carrusel), ordenadas por rank
     const feat = await fetch(
       `${SUPA_URL}/rest/v1/featured_opinions?report_id=eq.${report.id}` +
-        `&select=rank,tipo,tema,sector,texto,autor_display,created_at&order=rank.asc`,
+        `&select=rank,tipo,tema,sector,texto,autor_display,created_at&order=rank.asc&limit=5`,
       { headers: h }
     );
     const items = feat.ok ? await feat.json() : [];

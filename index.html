@@ -130,15 +130,27 @@
     /* ===== Formulario en celular: el botón de enviar siempre a la vista =====
        vh mide la pantalla con la barra de Safari escondida; al aparecer la barra, el final de la tarjeta
        (donde estaba el botón) quedaba tapado. dvh sigue a la barra y el botón queda fijo al pie de la tarjeta. */
-    .modal{height:100vh;height:100dvh}
-    .modal-card{max-height:92vh;max-height:92dvh;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+    /* --vh100 lo fija el script (alto real visible) para iPhone/Android viejos que no entienden dvh */
+    .modal{height:100vh;height:var(--vh100,100vh);height:100dvh}
+    .modal-card{max-height:92vh;max-height:calc(var(--vh100,100vh)*.92);max-height:92dvh;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
     html:has(.modal.open),html:has(.modal.open) body{overflow:hidden;overscroll-behavior:none}
     .send-row{position:sticky;bottom:0;z-index:3;margin:0 -28px -30px;padding:14px 28px 30px;background:#fff;box-shadow:0 -14px 16px -14px rgba(7,37,76,.22)}
     @media(max-width:900px){
-      .modal-card{max-height:calc(100vh - 20px);max-height:calc(100dvh - 20px)}
+      .modal-card{max-height:calc(100vh - 20px);max-height:calc(var(--vh100,100vh) - 20px);max-height:calc(100dvh - 20px)}
       .send-row{flex-direction:column;align-items:stretch;gap:8px;margin:0 -18px -30px;padding:12px 18px calc(14px + env(safe-area-inset-bottom,0px))}
       .send{width:100%;min-height:54px;justify-self:stretch;font-size:16px}
       .send-hint{text-align:center}
+    }
+    /* Celulares chicos (≤380 px de ancho) o pantallas bajas: cabecera y pie compactos para dejarle espacio al formulario,
+       sobre todo con el teclado abierto (la cabecera es fija y llegaba a ocupar el 40 % de la pantalla). */
+    @media (max-width:380px),(max-width:900px) and (max-height:600px){
+      .modal-head{padding:10px 18px}
+      .modal-head h2{font-size:22px;line-height:1.05}
+      .modal-head p{display:none}
+      form{padding-top:16px;gap:16px}
+      .send-row{gap:4px;padding:10px 18px calc(10px + env(safe-area-inset-bottom,0px))}
+      .send{min-height:50px}
+      .send-hint{font-size:12px;line-height:1.25}
     }
     /* ===== Carrusel de opiniones (las 5 que elige el admin cada semana) ===== */
     .opinion-wrap,.opinion-wrap>*{min-width:0}
@@ -397,10 +409,13 @@
   const consentEl=document.getElementById('consent'), sendBtn=document.getElementById('send'), sendHint=document.getElementById('sendHint');
   function syncSend(){ const ok=consentEl.checked; sendBtn.disabled=!ok; sendHint.hidden=ok; if(ok) document.getElementById('err-consent').textContent=''; }
   consentEl.addEventListener('change',syncSend); syncSend();
+  // Alto real visible (para navegadores que no entienden dvh): la tarjeta nunca debe quedar más alta que la pantalla.
+  function setVh(){document.documentElement.style.setProperty('--vh100',window.innerHeight+'px')}
+  setVh();window.addEventListener('resize',setVh);window.addEventListener('orientationchange',setVh);
   function goInicio(){clearTimeout(tyTimer);close();window.scrollTo({top:0,behavior:'smooth'})}
   function showThankYou(){card.classList.add('done');card.scrollTop=0;clearTimeout(tyTimer);tyTimer=setTimeout(goInicio,4800)}
   function setType(v){tipo.value=v;tabs.forEach(b=>b.classList.toggle('active',b.dataset.setType===v));document.getElementById('modalTitle').textContent=v==='Propuesta'?'Comparte tu propuesta':v==='Queja o problema'?'Cuéntanos el problema':'Cuéntanos qué pasa';}
-  function open(v){setType(v||'Otro tema');powStart();modal.classList.add('open');document.body.style.overflow='hidden';setTimeout(()=>tabs.find(x=>x.classList.contains('active'))?.focus(),40)}
+  function open(v){setType(v||'Otro tema');setVh();powStart();modal.classList.add('open');document.body.style.overflow='hidden';setTimeout(()=>tabs.find(x=>x.classList.contains('active'))?.focus(),40)}
   function close(){modal.classList.remove('open');document.body.style.overflow='';clearTimeout(tyTimer);card.classList.remove('done')}
   document.getElementById('tyHome').addEventListener('click',goInicio);
   document.querySelectorAll('.open-form').forEach(b=>b.addEventListener('click',()=>open(b.dataset.type)));

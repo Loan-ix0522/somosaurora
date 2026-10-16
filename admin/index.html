@@ -271,7 +271,7 @@
 <!-- ventanas abiertas (minimizadas o no) -->
 <div id="dock" class="dock" hidden aria-label="Ventanas abiertas"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js" integrity="sha384-GFr3yTh5lJznCbZfpTtXnwboFsxqtTQoeTZCRHhE0579KrRmlCzen5AA8ohaB5ug" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script>
 (function(){
   const $ = (s)=>document.querySelector(s);
@@ -287,6 +287,8 @@
   const tone=t=>t==='Propuesta'?'prop':t==='Queja o problema'?'queja':'otro';
   // Retención: las opiniones se borran solas a los 30 días (api/purge.js), salvo las "en gestión".
   const RETENCION=30;
+  // Prueba del consentimiento (migración 0004): qué versión de la política se aceptó y cuándo.
+  const consentTxt=r=>r.consent_version?`Sí · política ${r.consent_version} · aceptada el ${fmtDate(r.consent_at)}`:'Sí · anterior al registro de versión';
   let retCol=null; // true/false cuando loadRetention comprobó si existe la columna en_gestion
   const hasRet=()=>retCol!==null?retCol:(rows.length>0&&'en_gestion' in rows[0]); // false si falta aplicar la migración 0003
   const diasRestantes=r=>RETENCION-Math.floor((Date.now()-new Date(r.created_at))/864e5);
@@ -433,7 +435,7 @@
       <td title="${esc(r.referencia)}">${esc(r.referencia)||dash}</td>
       <td title="${esc(r.nombre)}">${esc(r.nombre)||dash}</td>
       <td>${esc(r.celular)||dash}</td>
-      <td>${r.consentimiento?'<span class="yes">Sí</span>':dash}</td>
+      <td>${r.consentimiento?`<span class="yes" title="${esc(consentTxt(r))}">Sí</span>`:dash}</td>
       <td>${borraTxt(r)}</td>
       <td>${r.evidencia_path?`<a href="#" data-foto="${esc(r.evidencia_path)}">ver</a>`:dash}</td>
     </tr>`; }).join('') || `<tr><td colspan="13" class="muted" style="height:90px;padding:0 24px">Sin opiniones en este filtro.</td></tr>`;
@@ -487,10 +489,13 @@
   // ---- CSV ----
   $('#csvBtn').addEventListener('click',()=>{
     const list=filtered();
-    const cols=['created_at','tipo','tema','sector','referencia','detalle','nombre','celular','consentimiento','evidencia_path'];
-    const head=['Fecha y hora','Tipo','Tema','Sector','Referencia','Detalle','Nombre','Celular','Consentimiento','Foto'];
-    const cell=v=>{ v=v==null?'':String(v); return /[",\n;]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
-    const csv=[head.join(','), ...list.map(r=>cols.map(c=> c==='created_at'?cell(fmtDate(r[c])):cell(r[c])).join(','))].join('\r\n');
+    const cols=['created_at','tipo','tema','sector','referencia','detalle','nombre','celular','consentimiento','consent_version','consent_at','evidencia_path'];
+    const head=['Fecha y hora','Tipo','Tema','Sector','Referencia','Detalle','Nombre','Celular','Consentimiento','Versión de la política','Aceptada el','Foto'];
+    // Un texto que empieza con = + - @ lo ejecutaría Excel como fórmula (cualquiera puede escribirlo en el formulario): se neutraliza con un apóstrofo.
+    // Los teléfonos (solo dígitos, espacios, + y -) no son fórmulas y se dejan como están.
+    const safe=v=>/^[=+\-@\t\r]/.test(v)&&!/^\+?[0-9][0-9\s+-]*$/.test(v)?"'"+v:v;
+    const cell=v=>{ v=safe(v==null?'':String(v)); return /[",\n;]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
+    const csv=[head.join(','), ...list.map(r=>cols.map(c=> (c==='created_at'||c==='consent_at')?cell(r[c]?fmtDate(r[c]):''):cell(r[c])).join(','))].join('\r\n');
     const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`somos-aurora-opiniones-${new Date().toISOString().slice(0,10)}.csv`; a.click();
   });
@@ -586,7 +591,7 @@
         <div class="kv-grid" style="margin:0">
           <div class="kv"><span>Nombre</span><b>${esc(r.nombre)||'—'}</b></div>
           <div class="kv"><span>Celular</span><b>${esc(r.celular)||'—'}</b></div>
-          <div class="kv"><span>Consentimiento</span><b>${r.consentimiento?'Sí':'—'}</b></div>
+          <div class="kv wide"><span>Consentimiento</span><b>${r.consentimiento?esc(consentTxt(r)):'—'}</b></div>
         </div></div>`,
       foot:`<button type="button" class="btn ghost sm" data-act="pick">★ Destacar en la web</button>`+
            (hasRet()?`<button type="button" class="btn ghost sm" data-act="gest"></button>`:'')+

@@ -127,6 +127,19 @@
     .send-hint[hidden]{display:none}
     .send:disabled{opacity:.45;cursor:not-allowed;box-shadow:none;filter:grayscale(.3)}
     .send:disabled:hover{transform:none;filter:grayscale(.3)}
+    /* ===== Formulario en celular: el botón de enviar siempre a la vista =====
+       vh mide la pantalla con la barra de Safari escondida; al aparecer la barra, el final de la tarjeta
+       (donde estaba el botón) quedaba tapado. dvh sigue a la barra y el botón queda fijo al pie de la tarjeta. */
+    .modal{height:100vh;height:100dvh}
+    .modal-card{max-height:92vh;max-height:92dvh;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+    html:has(.modal.open),html:has(.modal.open) body{overflow:hidden;overscroll-behavior:none}
+    .send-row{position:sticky;bottom:0;z-index:3;margin:0 -28px -30px;padding:14px 28px 30px;background:#fff;box-shadow:0 -14px 16px -14px rgba(7,37,76,.22)}
+    @media(max-width:900px){
+      .modal-card{max-height:calc(100vh - 20px);max-height:calc(100dvh - 20px)}
+      .send-row{flex-direction:column;align-items:stretch;gap:8px;margin:0 -18px -30px;padding:12px 18px calc(14px + env(safe-area-inset-bottom,0px))}
+      .send{width:100%;min-height:54px;justify-self:stretch;font-size:16px}
+      .send-hint{text-align:center}
+    }
     /* ===== Carrusel de opiniones (las 5 que elige el admin cada semana) ===== */
     .opinion-wrap,.opinion-wrap>*{min-width:0}
     .op-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:34px;margin-bottom:8px}
@@ -362,8 +375,8 @@
       <div class="row2"><div><label class="lbl" for="nombre">Tu nombre <span class="hint">(opcional)</span></label><input id="nombre" name="nombre" type="text" maxlength="60" autocomplete="name"></div><div><label class="lbl" for="celular">Celular <span class="hint">(opcional, para avisarte cómo va)</span></label><input id="celular" name="celular" type="tel" maxlength="15" inputmode="tel" placeholder="0991234567" autocomplete="tel"></div></div>
       <label class="consent"><input type="checkbox" id="consent" name="consentimiento" value="si" autocomplete="off"><span>He leído y acepto la Política de Tratamiento de Datos Personales de La Aurora Escucha. Autorizo el uso de mis datos para el seguimiento de mi reporte y, cuando corresponda, su remisión a las instituciones públicas competentes. <a href="politica-datos.html" target="_blank" rel="noopener">Ver política completa</a></span></label><div class="error" id="err-consent"></div>
       <p class="privacy">No incluyas datos de otras personas, como nombres, placas o números de casa. No mostramos tu nombre en ningún resumen público.</p>
-      <div class="send-row"><button class="send" id="send" type="submit" disabled>Enviar reporte</button><span class="send-hint" id="sendHint">Marca la casilla de aceptación para poder enviar.</span></div>
       <div class="success" id="success" role="status"></div>
+      <div class="send-row"><button class="send" id="send" type="submit" disabled>Enviar reporte</button><span class="send-hint" id="sendHint">Marca la casilla de aceptación para poder enviar.</span></div>
     </form>
     <div class="thankyou" id="thankyou" role="status" aria-live="polite">
       <div class="ty-check" aria-hidden="true"><svg class="ico"><use href="#i-check"/></svg></div>
@@ -448,7 +461,7 @@
     e.preventDefault(); success.classList.remove('on');
     const tema=form.querySelector('input[name=tema]:checked')?.value||'', sector=document.getElementById('sector').value, detalle=clean(document.getElementById('detalle').value), consent=document.getElementById('consent').checked, file=document.getElementById('foto').files[0];
     document.getElementById('err-cat').textContent=tema?'':'Elige el tema del reporte.';document.getElementById('err-sector').textContent=sector?'':'Selecciona tu sector.';document.getElementById('err-detalle').textContent=detalle.length>=10?'':'Cuéntanos un poco más (al menos 10 letras).';document.getElementById('err-consent').textContent=consent?'':'Necesitamos tu autorización para gestionar el reporte.';document.getElementById('err-foto').textContent='';
-    if(!tema||!sector||detalle.length<10||!consent)return;
+    if(!tema||!sector||detalle.length<10||!consent){form.querySelector('.error:not(:empty)')?.scrollIntoView({block:'center',behavior:'smooth'});return}
     const btn=document.getElementById('send');btn.disabled=true;btn.textContent='Enviando…';form.classList.add('form-spinner');
     try{
       const fd=new FormData(form), foto=await shrink(file);
@@ -462,7 +475,7 @@
       }
       form.reset();setType('Otro tema');powJob=null;showThankYou();
     }
-    catch(err){success.textContent=err&&err.message==='rate'?'Hay muchos envíos ahora mismo. Inténtalo de nuevo en unos minutos.':'No pudimos enviar tu reporte ahora. Inténtalo de nuevo en un momento.';success.classList.add('on');}
+    catch(err){success.textContent=err&&err.message==='rate'?'Hay muchos envíos ahora mismo. Inténtalo de nuevo en unos minutos.':'No pudimos enviar tu reporte ahora. Inténtalo de nuevo en un momento.';success.classList.add('on');success.scrollIntoView({block:'center',behavior:'smooth'});}
     finally{btn.textContent='Enviar reporte';form.classList.remove('form-spinner');syncSend()}
   });
 })();

@@ -7,6 +7,34 @@
   <script>document.documentElement.classList.add('js')</script>
   <title>Somos Aurora · Tu voz sí importa</title>
   <meta name="description" content="Espacio de escucha ciudadana para La Aurora, Daule." />
+  <link rel="canonical" href="https://www.laauroraescucha.com/" />
+  <!-- Pestaña del navegador y app instalada (PWA) -->
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="application-name" content="Somos Aurora" />
+  <meta name="apple-mobile-web-app-title" content="Somos Aurora" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <!-- Vista previa al compartir el enlace (WhatsApp, Facebook, X, Telegram…) -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Somos Aurora" />
+  <meta property="og:locale" content="es_EC" />
+  <meta property="og:url" content="https://www.laauroraescucha.com/" />
+  <meta property="og:title" content="Somos Aurora · Tu voz sí importa" />
+  <meta property="og:description" content="Espacio de escucha ciudadana para La Aurora, Daule. Cuéntanos qué pasa en tu comunidad." />
+  <meta property="og:image" content="https://www.laauroraescucha.com/og-image.png" />
+  <meta property="og:image:secure_url" content="https://www.laauroraescucha.com/og-image.png" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Logo de Somos Aurora: Tu voz sí importa" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Somos Aurora · Tu voz sí importa" />
+  <meta name="twitter:description" content="Espacio de escucha ciudadana para La Aurora, Daule. Cuéntanos qué pasa en tu comunidad." />
+  <meta name="twitter:image" content="https://www.laauroraescucha.com/og-image.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Allura&family=DM+Sans:wght@400;500;600;700&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
@@ -416,7 +444,7 @@
   function showThankYou(){card.classList.add('done');card.scrollTop=0;clearTimeout(tyTimer);tyTimer=setTimeout(goInicio,4800)}
   function setType(v){tipo.value=v;tabs.forEach(b=>b.classList.toggle('active',b.dataset.setType===v));document.getElementById('modalTitle').textContent=v==='Propuesta'?'Comparte tu propuesta':v==='Queja o problema'?'Cuéntanos el problema':'Cuéntanos qué pasa';}
   function open(v){setType(v||'Otro tema');setVh();powStart();modal.classList.add('open');document.body.style.overflow='hidden';setTimeout(()=>tabs.find(x=>x.classList.contains('active'))?.focus(),40)}
-  function close(){modal.classList.remove('open');document.body.style.overflow='';clearTimeout(tyTimer);card.classList.remove('done')}
+  function close(){modal.classList.remove('open');document.body.style.overflow='';clearTimeout(tyTimer);card.classList.remove('done');if(location.hash==='#reportar')history.replaceState(null,'',location.pathname+location.search)}
   document.getElementById('tyHome').addEventListener('click',goInicio);
   document.querySelectorAll('.open-form').forEach(b=>b.addEventListener('click',()=>open(b.dataset.type)));
   document.querySelector('.hamb').addEventListener('click',()=>open('Otro tema'));
@@ -493,6 +521,14 @@
     catch(err){success.textContent=err&&err.message==='rate'?'Hay muchos envíos ahora mismo. Inténtalo de nuevo en unos minutos.':'No pudimos enviar tu reporte ahora. Inténtalo de nuevo en un momento.';success.classList.add('on');success.scrollIntoView({block:'center',behavior:'smooth'});}
     finally{btn.textContent='Enviar reporte';form.classList.remove('form-spinner');syncSend()}
   });
+  /* App instalada (PWA) y enlace directo laauroraescucha.com/#reportar: entran directo al formulario.
+     En la app se abre solo la primera vez que carga la portada en cada uso (no al volver de otra página). */
+  const isApp=(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;
+  let firstInApp=false;
+  if(isApp){try{firstInApp=!sessionStorage.getItem('formAuto');sessionStorage.setItem('formAuto','1')}catch(e){firstInApp=true}}
+  if(location.hash==='#reportar'||firstInApp) open('Otro tema');
+  window.addEventListener('hashchange',()=>{if(location.hash==='#reportar'&&!modal.classList.contains('open'))open('Otro tema')});
+  if('serviceWorker' in navigator) window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
 })();
 </script>
 <script>

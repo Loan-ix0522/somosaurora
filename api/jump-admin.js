@@ -4,10 +4,11 @@ import { json, leerJson } from "./_jump/http.js";
 import { exigirAdmin } from "./_jump/acceso.js";
 import { cuentas } from "./_jump/cuentas.js";
 import { zoom } from "./_jump/zoom.js";
+import { ejemplos } from "./_jump/ejemplos.js";
 
 export const config = { runtime: "edge" };
 
-const ACCIONES = { ...cuentas, ...zoom };
+const ACCIONES = { ...cuentas, ...zoom, ...ejemplos };
 
 export default async function handler(request) {
   if (request.method !== "POST") return json({ ok: false, error: "Método no permitido." }, 405);

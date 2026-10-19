@@ -3,9 +3,14 @@
 import { $, esc, ic, logo, fig, iniciales, toast } from "./ui.js";
 import * as datos from "./datos.js";
 import * as ingreso from "./vistas-ingreso.js";
+import * as emprendedor from "./vistas-emprendedor.js";
 
 export const estado = { yo: null, avisosNuevos: 0, mensajeIngreso: "" };
 const ACT = {}, ENVIOS = {}, ENTRADAS = {}, RUTAS = [];
+// Cada módulo de vistas aporta { rutas, acciones, envios, entradas, limpiar }.
+const MODULOS = [ingreso, emprendedor];
+const MSG_SUSPENDIDA = "Tu cuenta está suspendida. Escríbele al equipo de JUMP.";
+const MSG_SESION = "Tu sesión venció. Vuelve a entrar.";
 
 export function registrar(acciones) { Object.assign(ACT, acciones); }
 export function registrarEnvios(envios) { Object.assign(ENVIOS, envios); }
@@ -17,6 +22,8 @@ export const inicioDe = (m) => (m && m.rol === "admin" ? "a/resumen" : "e/inicio
 export function ir(hash) { if (location.hash === "#" + hash) render(); else location.hash = hash; }
 export async function cerrarSesion(mensaje = "") {
   estado.yo = null;
+  estado.avisosNuevos = 0;
+  for (const m of MODULOS) m.limpiar?.(); // nada de lo cargado queda para la próxima persona
   await datos.salir();
   estado.mensajeIngreso = mensaje;
   ir("ingreso");
@@ -62,6 +69,22 @@ const errorCarga = (e) => `<div class="panel empty">${fig()}<h3>${e.codigo === "
   <p>${e.codigo === "red" ? "Revisa tu internet e intenta de nuevo." : "Algo salió mal de nuestro lado. Intenta de nuevo en un momento."}</p>
   <button type="button" class="btn btn-primary" data-act="reintentar">Intentar de nuevo</button></div>`;
 
+// En cada cambio de página se pregunta a la base por la cuenta: si el equipo la suspendió mientras navegaba,
+// se cierra la sesión. No frena el dibujo de la página (lo que ya está en pantalla lo tenía igual).
+let vigilando = null;
+function vigilarCuenta() {
+  if (vigilando) return;
+  vigilando = datos.yo()
+    .then((m) => {
+      if (!estado.yo) return;
+      if (!m) return cerrarSesion();
+      if (m.estado !== "activa") return cerrarSesion(MSG_SUSPENDIDA);
+      estado.yo = { ...estado.yo, ...m };
+    })
+    .catch((e) => { if (e.codigo === "sesion") cerrarSesion(MSG_SESION); })
+    .finally(() => { vigilando = null; });
+}
+
 let nRender = 0, ultima = "";
 function pintar(n, path, titulo, html, despues) {
   if (n !== nRender) return;
@@ -90,6 +113,7 @@ async function render() {
   if (!listo) return ir("ingreso");
   if (partes[0] === "a" && yo.rol !== "admin") return ir("e/inicio");
   if (partes[0] === "e" && yo.rol === "admin") return ir("a/resumen");
+  vigilarCuenta();
 
   const r = RUTAS.find((x) => (typeof x.patron === "string" ? x.patron === path : x.patron.test(path)));
   if (!r) return pintar(n, path, "Página no encontrada", shell(partes[0], "", noExiste(partes[0])));
@@ -98,7 +122,9 @@ async function render() {
     out = await r.vista({ partes, query: new URLSearchParams(query), path });
   } catch (e) {
     if (n !== nRender) return;
-    if (e.codigo === "sesion") return cerrarSesion("Tu sesión venció. Vuelve a entrar.");
+    if (e.codigo === "sesion") return cerrarSesion(MSG_SESION);
+    if (e.codigo === "suspendida") return cerrarSesion(MSG_SUSPENDIDA);
+    if (e.codigo === "sin_acceso") return cerrarSesion("Esta cuenta no tiene acceso a la Comunidad JUMP.");
     console.warn("[jump] vista", path, e.codigo || e.message);
     return pintar(n, path, r.titulo, shell(partes[0], r.activo || path, errorCarga(e)));
   }
@@ -129,15 +155,22 @@ addEventListener("unhandledrejection", (e) => {
   const err = e.reason;
   if (err instanceof datos.ErrorJump) {
     e.preventDefault();
-    if (err.codigo === "sesion") return cerrarSesion("Tu sesión venció. Vuelve a entrar.");
-    toast(err.codigo === "red" ? "No se pudo conectar. Revisa tu internet." : err.mensaje || "No se pudo completar. Intenta de nuevo.");
+    if (err.codigo === "sesion") return cerrarSesion(MSG_SESION);
+    if (err.codigo === "suspendida") return cerrarSesion(MSG_SUSPENDIDA);
+    // Un mensaje técnico de la base no se muestra tal cual.
+    toast(err.codigo === "red" ? "No se pudo conectar. Revisa tu internet."
+      : err.codigo === "servidor" ? "No se pudo completar. Intenta de nuevo."
+      : err.mensaje || "No se pudo completar. Intenta de nuevo.");
   }
 });
 
-registrar({ salir: () => cerrarSesion(), reintentar: () => render() });
-registrar(ingreso.acciones);
-registrarEnvios(ingreso.envios);
-registrarEntradas(ingreso.entradas);
+registrar({ salir: () => cerrarSesion(), reintentar: () => { for (const m of MODULOS) m.limpiar?.(); render(); } });
+for (const m of MODULOS) {
+  registrar(m.acciones || {});
+  registrarEnvios(m.envios || {});
+  registrarEntradas(m.entradas || {});
+  for (const r of m.rutas || []) registrarRuta(r);
+}
 
 async function arrancar() {
   try {
@@ -145,7 +178,7 @@ async function arrancar() {
     const m = await datos.yo();
     if (m && m.estado !== "activa") {
       await datos.salir();
-      estado.mensajeIngreso = "Tu cuenta está suspendida. Escríbele al equipo de JUMP.";
+      estado.mensajeIngreso = MSG_SUSPENDIDA;
     } else estado.yo = m;
   } catch (e) {
     if (e.codigo === "red") {

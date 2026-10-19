@@ -102,6 +102,14 @@ export const entradas = {
   },
 };
 
+// Las mismas reglas que /api/jump-clave (errorDeClave): 8 a 72 caracteres, un número y distinta a la temporal.
+export function errorClaveNueva(v) {
+  if (v.length < 8 || !/\d/.test(v)) return "La clave debe tener al menos 8 caracteres y un número.";
+  if (v.length > 72) return "La clave puede tener hasta 72 caracteres.";
+  if (/^JUMP-\d{4}-\d{4}$/i.test(v)) return "Elige una clave distinta a la temporal.";
+  return "";
+}
+
 async function enviarIngreso(f, btn) {
   const u = $("#lgUser"), p = $("#lgPass"), banner = $("#loginBanner");
   banner.hidden = true;
@@ -131,9 +139,7 @@ async function enviarClaveNueva(f, btn) {
   const a = $("#np1"), b = $("#np2"), priv = $("#npPriv");
   $("#npBanner").hidden = true;
   const v = a.value;
-  const ma = v.length < 8 || !/\d/.test(v) ? "La clave debe tener al menos 8 caracteres y un número."
-    : v.length > 72 ? "La clave puede tener hasta 72 caracteres."
-    : /^JUMP-\d{4}-\d{4}$/i.test(v) ? "Elige una clave distinta a la temporal." : "";
+  const ma = errorClaveNueva(v);
   fieldErr(a, ma);
   fieldErr(b, !ma && b.value !== v ? "Las dos claves no son iguales." : "");
   fieldErr(priv, priv.checked ? "" : "Para continuar, acepta el aviso de privacidad.");

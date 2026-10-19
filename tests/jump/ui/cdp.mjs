@@ -99,6 +99,26 @@ async function entrar(p, clave = "clave-prueba-1", { equipo = false } = {}) {
   await clic("#loginForm [type=submit]");
 }
 const fila = async (sql, p) => (await sim.db.query(sql, p)).rows[0];
+const sql = (q, p) => sim.db.query(q, p);
+// La API real, como el equipo (A): para sembrar ejemplos o suspender a alguien mientras otro navega.
+async function apiAdmin(accion, cuerpo = {}) {
+  const t = await (await fetch(sim.url + "/supa/auth/v1/token?grant_type=password", { method: "POST",
+    headers: { "Content-Type": "application/json", "User-Agent": UA }, body: JSON.stringify({ email: X.A.email, password: "clave-prueba-1" }) })).json();
+  const r = await fetch(sim.url + "/api/jump-admin", { method: "POST",
+    headers: { "Content-Type": "application/json", "User-Agent": UA, Origin: sim.url, Authorization: "Bearer " + t.access_token },
+    body: JSON.stringify({ accion, ...cuerpo }) });
+  return { status: r.status, ...(await r.json()) };
+}
+// window.open falso: guarda lo que la app abre. La app abre la pestaña antes de esperar la red y después le pone la URL.
+const atraparAperturas = () => ev(`(() => {
+  window.__abiertas = [];
+  window.open = (u) => {
+    if (u) window.__abiertas.push(u);
+    return { opener: 1, close() {}, location: { replace: (x) => window.__abiertas.push(x), set href(x) { window.__abiertas.push(x); } } };
+  };
+  return true;
+})()`);
+const desborde = () => ev("document.documentElement.scrollWidth - innerWidth");
 
 // ---------- escenarios ----------
 const ESCENARIOS = {
@@ -168,11 +188,167 @@ const ESCENARIOS = {
       return csp.length === 0 || csp.join(" | ");
     },
   },
+
+  emprendedor: {
+    inicio: async () => {
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector(".page-head h1")`);
+      const h = await texto(".page-head h1");
+      if (h !== "Hola, María") return "saludo: " + h;
+      const tarjetas = await ev(`document.querySelectorAll("#page .m-grid .m-card").length`);
+      if (tarjetas !== 4) return "tarjetas en inicio: " + tarjetas;
+      await foto("e-inicio");
+      await ir("e/mentorias");
+      const publicadas = (await fila("select count(*)::int n from public.jump_mentorias where estado = 'publicada'")).n;
+      const n = await esperar(`location.hash === "#e/mentorias" && document.querySelectorAll("#page .m-grid .m-card").length`);
+      return n === publicadas || `mentorías: ${n} de ${publicadas}`;
+    },
+    "aula-visto": async () => {
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio"`);
+      await ir("e/m/" + X.P);
+      await esperar(`!!document.querySelector('[data-act="visto"]')`);
+      await ev(`(() => { window.__hopper = false; new MutationObserver(() => { if (document.querySelector(".hopper")) window.__hopper = true; }).observe(document.body, { childList: true }); return true; })()`);
+      await clic('[data-act="visto"]');
+      await esperar("window.__hopper === true", 4000);
+      const r = await fila("select count(*)::int n from public.jump_progreso where user_id = $1 and modulo_id = $2", [X.E.id, X.P1]);
+      if (r.n !== 1) return "sin fila en jump_progreso";
+      await esperar(`location.hash === "#e/m/${X.P}/2"`);
+      await foto("e-aula");
+      return true;
+    },
+    "aula-video": async () => {
+      await sql("update public.jump_modulos set video_url = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' where id = $1", [X.P1]);
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio"`);
+      await ir(`e/m/${X.P}/1`);
+      await esperar(`!!document.querySelector('[data-act="reproducir"]')`);
+      await clic('[data-act="reproducir"]');
+      const src = await esperar(`document.querySelector(".player iframe")?.src`);
+      return src.startsWith("https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ") || src;
+    },
+    "video-pendiente": async () => {
+      await sql("update public.jump_modulos set video_url = null where id = $1", [X.P1]);
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio"`);
+      await ir(`e/m/${X.P}/1`);
+      const t = await esperar(`document.querySelector(".player")?.textContent`);
+      return t.includes("Video pendiente: el equipo lo sube pronto") || t;
+    },
+    material: async () => {
+      const ruta = `${X.P}/guia-ruc.pdf`;
+      await sql("insert into storage.objects (bucket_id, name) values ('jump-material', $1) on conflict do nothing", [ruta]);
+      sim.archivos.set("jump-material/" + ruta, { bytes: Buffer.from("%PDF-1.4 prueba"), tipo: "application/pdf" });
+      const m = await fila("insert into public.jump_materiales (mentoria_id, nombre, tipo, ruta, bytes, mime) values ($1, 'Guía del RUC', 'archivo', $2, 15, 'application/pdf') returning id", [X.P, ruta]);
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio"`);
+      await ir(`e/m/${X.P}/1`);
+      const sel = `[data-act="material"][data-id="${m.id}"]`;
+      await esperar(`!!document.querySelector('${sel}')`);
+      await atraparAperturas();
+      await clic(sel);
+      const [u] = await esperar("window.__abiertas.length && window.__abiertas");
+      return u.startsWith(sim.url + "/supa/storage/v1/object/sign/jump-material/") || u;
+    },
+    "clase-ventana": async () => {
+      await sql("update public.jump_clases set inicia_en = now() + interval '5 minutes' where id = $1", [X.C1]);
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio"`);
+      await ir("e/clases");
+      const sel = `[data-act="zoom"][data-id="${X.C1}"]`;
+      await esperar(`!!document.querySelector('${sel}')`);
+      const b = await texto(sel);
+      if (b !== "Entrar a Zoom") return "botón: " + b;
+      await atraparAperturas();
+      await clic(sel);
+      const [u] = await esperar("window.__abiertas.length && window.__abiertas");
+      await foto("e-clases");
+      return u === "https://us02web.zoom.us/j/111" || u;
+    },
+    asistire: async () => {
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio"`);
+      await ir("e/clases");
+      const sel = `[data-act="asistire"][data-id="${X.C3}"]`;
+      await esperar(`document.querySelector('${sel}')?.getAttribute("aria-pressed") === "false"`);
+      await clic(sel);
+      await esperar(`document.querySelector('${sel}')?.getAttribute("aria-pressed") === "true"`);
+      const r = await fila("select confirmado_en from public.jump_asistencia where user_id = $1 and clase_id = $2", [X.E.id, X.C3]);
+      return (!!r && !!r.confirmado_en) || "sin fila de asistencia";
+    },
+    "avisos-vistos": async () => {
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio"`);
+      const antes = await esperar(`Number(document.querySelector('.side a[href="#e/avisos"] .nav-badge')?.firstChild?.textContent || 0)`);
+      await ir("e/avisos");
+      await esperar(`location.hash === "#e/avisos" && !document.querySelector(".nav-badge") && !document.querySelector(".tabbar .dot")`);
+      const total = (await fila("select count(*)::int n from public.jump_avisos")).n;
+      const vistos = (await fila("select count(*)::int n from public.jump_avisos_vistos where user_id = $1", [X.E.id])).n;
+      return (antes > 0 && vistos === total) || `antes ${antes}, vistos ${vistos} de ${total}`;
+    },
+    perfil: async () => {
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio"`);
+      await ir("e/perfil");
+      await esperar(`!!document.querySelector("#pfWa")`);
+      const ced = await texto("#pfCedula");
+      if (ced !== "09••••5675") return "cédula: " + ced;
+      await escribir("#pfWa", "+593 99 123 4567");
+      await clic("#perfilForm [type=submit]");
+      await esperar(`document.querySelector("#toast").classList.contains("show")`);
+      const r = await fila("select whatsapp from public.jump_miembros where user_id = $1", [X.E.id]);
+      await foto("e-perfil");
+      return r.whatsapp === "0991234567" || "whatsapp: " + r.whatsapp;
+    },
+    "suspendida-en-uso": async () => {
+      await entrar(X.E2);
+      await esperar(`location.hash === "#e/inicio"`);
+      const r = await apiAdmin("suspender", { userId: X.E2.id, motivo: "prueba" });
+      if (r.status !== 200) return "no se suspendió: " + JSON.stringify(r);
+      await ir("e/mentorias");
+      await esperar(`location.hash === "#ingreso" && !document.querySelector("#loginBanner").hidden`);
+      const t = await texto("#loginBanner");
+      return t.includes("Tu cuenta está suspendida. Escríbele al equipo de JUMP.") || t;
+    },
+    "movil-sin-desborde": async () => {
+      await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+      try {
+        await entrar(X.E);
+        await esperar(`location.hash === "#e/inicio"`);
+        const malas = [];
+        for (const r of ["e/inicio", "e/mentorias", `e/m/${X.P}/1`, `e/m/${X.P}/2`, "e/clases", "e/avisos", "e/perfil"]) {
+          await ir(r);
+          await esperar(`location.hash === "#${r}" && !!document.querySelector("#page > *")`);
+          await dormir(150);
+          const d = await desborde();
+          if (d !== 0) malas.push(`${r}: ${d}px`);
+        }
+        await foto("e-movil-perfil");
+        return malas.length === 0 || malas.join(", ");
+      } finally {
+        await send("Emulation.setDeviceMetricsOverride", { width: W, height: H, deviceScaleFactor: 1, mobile: movil });
+      }
+    },
+    csp: async () => {
+      const csp = consola.filter((c) => /Content Security Policy|Refused to/i.test(c));
+      return csp.length === 0 || csp.join(" | ");
+    },
+  },
+};
+
+// Preparación por grupo (una vez, antes de sus escenarios).
+const PREPARAR = {
+  emprendedor: async () => {
+    const r = await apiAdmin("ejemplos-cargar");
+    if (r.status !== 201 && r.status !== 200) throw new Error("no se cargaron los ejemplos: " + JSON.stringify(r));
+    await sql("update public.jump_miembros set whatsapp = null where user_id = $1", [X.E.id]);
+  },
 };
 
 // ---------- correr ----------
 const resultados = {};
 const lista = ESCENARIOS[grupo];
+if (lista && PREPARAR[grupo]) await PREPARAR[grupo]();
 if (!lista) { console.error(`Grupo desconocido: ${grupo}. Hay: ${Object.keys(ESCENARIOS).join(", ")}`); process.exitCode = 2; }
 for (const [nombre, fn] of Object.entries(lista || {})) {
   try {

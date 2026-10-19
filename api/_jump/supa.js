@@ -52,3 +52,8 @@ export async function miembro(userId) {
 export async function bitacora(actorId, accion, objetivo = null, detalle = null) {
   await rest("jump_bitacora", { method: "POST", body: { actor_id: actorId, accion, objetivo, detalle }, prefer: "return=minimal" });
 }
+
+export async function actualizarMiembro(userId, campos) {
+  const r = await rest(`jump_miembros?user_id=eq.${encodeURIComponent(userId)}`, { method: "PATCH", body: campos, prefer: "return=minimal" });
+  if (!r.ok) throw new Error(`actualizar miembro ${r.status}`);
+}

@@ -15,6 +15,9 @@ const verificador = (nueve) => {
 };
 const valida = (nueve) => nueve + verificador(nueve);
 
+// Cambia un carácter interior: el último de un base64url lleva bits de relleno y cambiarlo puede no alterar los bytes.
+const alterar = (s, i = s.length - 6) => s.slice(0, i) + (s[i] === "A" ? "B" : "A") + s.slice(i + 1);
+
 test("cédulas válidas e inválidas", () => {
   for (const c of [valida("091234567"), valida("170000000"), valida("300000001")]) assert.equal(cedulaValida(c), true, c);
   assert.equal(cedulaValida("0912345675"), true);
@@ -62,7 +65,7 @@ test("cifrado ida y vuelta; alterado falla", async () => {
   assert.match(sobre, /^v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
   assert.notEqual(sobre, await cifrar("hola"), "iv distinto cada vez");
   assert.equal(await descifrar(sobre), "hola");
-  const malo = sobre.slice(0, -2) + (sobre.endsWith("A") ? "BB" : "AA");
+  const malo = alterar(sobre);
   await assert.rejects(descifrar(malo));
 });
 
@@ -70,7 +73,7 @@ test("state firmado: válido, alterado y vencido", async () => {
   const t = await firmar({ a: 1 }, 60);
   assert.equal((await verificar(t)).a, 1);
   const [p, f] = t.split(".");
-  assert.equal(await verificar(p + "." + f.slice(0, -2) + "xx"), null);
+  assert.equal(await verificar(p + "." + alterar(f)), null);
   assert.equal(await verificar(btoa(JSON.stringify({ a: 2, exp: 9e12 })).replace(/=+$/, "") + "." + f), null);
   assert.equal(await verificar(await firmar({ a: 1 }, -1)), null);
   assert.equal(await verificar("basura"), null);

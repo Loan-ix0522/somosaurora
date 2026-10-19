@@ -31,6 +31,8 @@ async function iniciar() {
 }
 const callback = (qs, cookie) => fetch(sim.url + "/api/jump-zoom-callback?" + new URLSearchParams(qs),
   { redirect: "manual", headers: cookie ? { Cookie: cookie } : {} });
+// Cambia un carácter interior: el último de un base64url lleva bits de relleno y cambiarlo puede no alterar los bytes.
+const alterar = (s, i = s.length - 6) => s.slice(0, i) + (s[i] === "A" ? "B" : "A") + s.slice(i + 1);
 const destino = (estado) => `${sim.url}/jump/comunidad/#a/ajustes?zoom=${estado}`;
 const filaZoom = async () => (await sim.db.query("select * from jump_zoom")).rows[0];
 async function conectar() {
@@ -69,7 +71,7 @@ test("zoom-iniciar: emprendedor 403; admin recibe la URL de Zoom con redirect_ur
 
 test("callback con state alterado, sin la cookie del navegador, cancelado o con admin inactivo → no conecta nada", async () => {
   const i = await iniciar();
-  const alterado = i.state.slice(0, -2) + (i.state.endsWith("AA") ? "BB" : "AA");
+  const alterado = alterar(i.state);
   assert.equal((await callback({ code: "c", state: alterado }, i.cookie)).headers.get("location"), destino("error"));
   assert.equal((await callback({ code: "c", state: i.state })).headers.get("location"), destino("error"));
   assert.equal((await callback({ code: "c", state: i.state }, "jump_zoom_nonce=otro")).headers.get("location"), destino("error"));

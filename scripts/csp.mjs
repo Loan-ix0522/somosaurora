@@ -2,7 +2,7 @@
 //
 // Las páginas usan scripts dentro del propio HTML; la CSP solo los deja correr si su hash coincide.
 // Por eso, CADA VEZ que se edite un <script> en línea de index.html, admin/index.html, terminos.html,
-// politica-datos.html o informe-demo.html hay que correr:
+// politica-datos.html, informe-demo.html o de las páginas de jump/comunidad/ hay que correr:
 //
 //     node scripts/csp.mjs          # actualiza vercel.json
 //     node scripts/csp.mjs --check  # solo comprueba (sale con error si está desactualizada)
@@ -21,6 +21,10 @@ const read = (f) => readFileSync(join(root, f), "utf8");
 
 const PUBLIC_PAGES = ["index.html", "terminos.html", "politica-datos.html", "informe-demo.html"];
 const ADMIN_PAGES = ["admin/index.html"];
+// Comunidad JUMP: sin scripts en línea (todo va en /jump/comunidad/js/), pero si algún día se agrega uno, se calcula igual.
+const JUMP_PAGES = ["jump/comunidad/index.html", "jump/comunidad/privacidad.html"];
+// Videos de las mentorías: solo los reproductores sin cookies de YouTube y el de Vimeo.
+const VIDEO_FRAMES = "https://www.youtube-nocookie.com https://player.vimeo.com";
 const SUPABASE_HOST = "https://jdterctcniotbipgwcdv.supabase.co";
 const SUPABASE_JS = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js";
 
@@ -47,12 +51,15 @@ const common = [
 const publicCsp = [...common, `script-src 'self' ${inlineHashes(PUBLIC_PAGES).join(" ")}`, "img-src 'self' data:", "connect-src 'self'"].join("; ");
 const adminCsp = [...common, `script-src 'self' ${inlineHashes(ADMIN_PAGES).join(" ")} ${SUPABASE_JS}`, `img-src 'self' data: ${SUPABASE_HOST}`, `connect-src 'self' ${SUPABASE_HOST}`].join("; ");
 
+const jumpCsp = [...common, `script-src 'self' ${inlineHashes(JUMP_PAGES).join(" ")} ${SUPABASE_JS}`.replace(/ {2,}/g, " "), `img-src 'self' data: blob: ${SUPABASE_HOST}`, `connect-src 'self' ${SUPABASE_HOST}`, `frame-src ${VIDEO_FRAMES}`, "media-src 'none'"].join("; ");
+const cspDe = (source) => (source.startsWith("/admin") ? adminCsp : source.startsWith("/jump") ? jumpCsp : publicCsp);
+
 const cfg = JSON.parse(read("vercel.json"));
 let touched = 0;
 for (const rule of cfg.headers || []) {
   for (const h of rule.headers) {
     if (h.key !== "Content-Security-Policy") continue;
-    const want = rule.source.startsWith("/admin") ? adminCsp : publicCsp;
+    const want = cspDe(rule.source);
     if (h.value !== want) { h.value = want; touched++; }
   }
 }

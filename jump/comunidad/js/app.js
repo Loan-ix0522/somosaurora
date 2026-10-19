@@ -1,0 +1,162 @@
+// Comunidad JUMP — arranque, rutas, menú y eventos.
+// Rutas: #ingreso · #e/… (emprendedor) · #a/… (equipo). Cada módulo de vistas aporta rutas, acciones y envíos.
+import { $, esc, ic, logo, fig, iniciales, toast } from "./ui.js";
+import * as datos from "./datos.js";
+import * as ingreso from "./vistas-ingreso.js";
+
+export const estado = { yo: null, avisosNuevos: 0, mensajeIngreso: "" };
+const ACT = {}, ENVIOS = {}, ENTRADAS = {}, RUTAS = [];
+
+export function registrar(acciones) { Object.assign(ACT, acciones); }
+export function registrarEnvios(envios) { Object.assign(ENVIOS, envios); }
+export function registrarEntradas(entradas) { Object.assign(ENTRADAS, entradas); }
+// patron: "e/inicio" o RegExp sobre la ruta; vista: async ({ partes, query, path }) => html | { html, titulo, despues }
+export function registrarRuta({ patron, activo, titulo, vista }) { RUTAS.push({ patron, activo, titulo, vista }); }
+
+export const inicioDe = (m) => (m && m.rol === "admin" ? "a/resumen" : "e/inicio");
+export function ir(hash) { if (location.hash === "#" + hash) render(); else location.hash = hash; }
+export async function cerrarSesion(mensaje = "") {
+  estado.yo = null;
+  await datos.salir();
+  estado.mensajeIngreso = mensaje;
+  ir("ingreso");
+}
+// Vuelve a dibujar la ruta actual (después de guardar algo).
+export const refrescar = () => render();
+
+// [ruta, ícono, nombre, nombre corto en la barra de abajo (null: va arriba, junto a "Salir")]
+const MENU = {
+  e: [["e/inicio", "home", "Inicio", "Inicio"], ["e/mentorias", "play", "Mentorías", "Mentorías"], ["e/clases", "video", "Clases en vivo", "Clases"],
+    ["e/muro", "chat", "Comunidad", "Comunidad"], ["e/avisos", "mega", "Avisos", "Avisos"], ["e/perfil", "user", "Mi perfil", null]],
+  a: [["a/resumen", "grid", "Resumen", "Resumen"], ["a/mentorias", "play", "Mentorías", "Mentorías"], ["a/clases", "video", "Clases en vivo", "Clases"],
+    ["a/emprendedores", "users", "Emprendedores", "Personas"], ["a/muro", "chat", "Comunidad", "Comunidad"], ["a/avisos", "mega", "Avisos", null], ["a/ajustes", "gear", "Ajustes", null]],
+};
+
+export function shell(rol, activo, contenido) {
+  const items = MENU[rol], yo = estado.yo || {};
+  const home = rol === "e" ? "e/inicio" : "a/resumen";
+  const nuevos = (h) => (h === "e/avisos" ? estado.avisosNuevos : 0);
+  const actual = (h) => (activo === h ? 'aria-current="page"' : "");
+  const quien = `<span class="ava">${esc(iniciales(yo.nombres) || "EJ")}</span><div class="sf-who"><b>${esc(yo.nombres || "Equipo JUMP")}</b><small>${esc(rol === "e" ? yo.negocio || "" : "Equipo JUMP")}</small></div>`;
+  const salir = (cls) => `<button type="button" class="icon-btn ${cls}" data-act="salir" aria-label="Salir" title="Salir">${ic("logout")}</button>`;
+  return `<div class="shell">
+      <nav class="side" aria-label="Menú principal">
+        <a class="side-logo" href="#${home}" aria-label="JUMP, inicio">${logo()}<span>${rol === "e" ? "Comunidad" : "Equipo"}<br>JUMP</span></a>
+        ${items.map(([h, i, l]) => `<a class="nav-link" href="#${h}" ${actual(h)}>${ic(i)}<span>${l}</span>${nuevos(h) ? `<span class="nav-badge">${nuevos(h)}<span class="vh"> nuevos</span></span>` : ""}</a>`).join("")}
+        <div class="side-foot">${quien}${salir("on-navy")}</div>
+      </nav>
+      <div class="main">
+        <header class="mtop"><a class="mtop-l" href="#${home}" aria-label="JUMP, inicio">${logo()}<span>${rol === "e" ? "Comunidad" : "Equipo"}</span></a>
+          <div class="mtop-r">${items.filter((x) => !x[3]).map(([h, i, l]) => `<a class="icon-btn" href="#${h}" aria-label="${l}" title="${l}" ${actual(h)}>${ic(i)}</a>`).join("")}${salir("")}</div></header>
+        <main class="page" id="page" tabindex="-1">${contenido}</main>
+      </div>
+      <nav class="tabbar" aria-label="Menú">
+        ${items.filter((x) => x[3]).map(([h, i, , c]) => `<a href="#${h}" ${actual(h)}><span class="ic-pill">${ic(i)}</span>${c}${nuevos(h) ? '<span class="dot" aria-hidden="true"></span>' : ""}</a>`).join("")}
+      </nav>
+    </div>`;
+}
+
+const noExiste = (rol) => `<div class="panel empty">${fig()}<h3>Esta página no existe</h3><p>Puede que el enlace esté mal escrito.</p>
+  <a class="btn btn-primary" href="#${rol === "a" ? "a/resumen" : "e/inicio"}">Volver al inicio</a></div>`;
+const errorCarga = (e) => `<div class="panel empty">${fig()}<h3>${e.codigo === "red" ? "No hay conexión" : "No se pudo cargar"}</h3>
+  <p>${e.codigo === "red" ? "Revisa tu internet e intenta de nuevo." : "Algo salió mal de nuestro lado. Intenta de nuevo en un momento."}</p>
+  <button type="button" class="btn btn-primary" data-act="reintentar">Intentar de nuevo</button></div>`;
+
+let nRender = 0, ultima = "";
+function pintar(n, path, titulo, html, despues) {
+  if (n !== nRender) return;
+  $("#app").innerHTML = html;
+  document.title = `${titulo || "Comunidad JUMP"} · Comunidad JUMP`;
+  if (path !== ultima) { window.scrollTo(0, 0); const pg = $("#page"); if (pg && ultima) pg.focus({ preventScroll: true }); }
+  ultima = path;
+  despues?.();
+}
+
+async function render() {
+  const n = ++nRender;
+  let raw = location.hash.slice(1);
+  try { raw = decodeURIComponent(raw); } catch { /* hash mal formado */ }
+  const [path, query = ""] = (raw || "ingreso").split("?");
+  const partes = path.split("/");
+  const yo = estado.yo;
+  const listo = !!yo && yo.estado === "activa" && !yo.debeCambiarClave;
+
+  if (path === "ingreso") {
+    if (listo) return ir(inicioDe(yo));
+    const v = ingreso.vista();
+    return pintar(n, path, "Ingreso", v.html, v.despues);
+  }
+  if (partes[0] !== "e" && partes[0] !== "a") return ir(listo ? inicioDe(yo) : "ingreso");
+  if (!listo) return ir("ingreso");
+  if (partes[0] === "a" && yo.rol !== "admin") return ir("e/inicio");
+  if (partes[0] === "e" && yo.rol === "admin") return ir("a/resumen");
+
+  const r = RUTAS.find((x) => (typeof x.patron === "string" ? x.patron === path : x.patron.test(path)));
+  if (!r) return pintar(n, path, "Página no encontrada", shell(partes[0], "", noExiste(partes[0])));
+  let out;
+  try {
+    out = await r.vista({ partes, query: new URLSearchParams(query), path });
+  } catch (e) {
+    if (n !== nRender) return;
+    if (e.codigo === "sesion") return cerrarSesion("Tu sesión venció. Vuelve a entrar.");
+    console.warn("[jump] vista", path, e.codigo || e.message);
+    return pintar(n, path, r.titulo, shell(partes[0], r.activo || path, errorCarga(e)));
+  }
+  const v = typeof out === "string" ? { html: out } : out;
+  pintar(n, path, v.titulo || r.titulo, shell(partes[0], r.activo || path, v.html), v.despues);
+}
+
+// ---------- eventos (delegados) ----------
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-act]");
+  if (!t || t.closest("[disabled]") || t.disabled) return;
+  const fn = ACT[t.dataset.act];
+  if (!fn) return;
+  if (t.tagName === "A") e.preventDefault();
+  fn(t, e);
+});
+document.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const f = e.target, fn = ENVIOS[f.id];
+  if (fn) fn(f, f.querySelector("[type=submit]"), e);
+});
+document.addEventListener("input", (e) => {
+  const fn = ENTRADAS[e.target.id] || ENTRADAS[e.target.dataset?.entrada];
+  if (fn) fn(e.target, e);
+});
+// Red de seguridad: un error sin atender no deja la pantalla colgada.
+addEventListener("unhandledrejection", (e) => {
+  const err = e.reason;
+  if (err instanceof datos.ErrorJump) {
+    e.preventDefault();
+    if (err.codigo === "sesion") return cerrarSesion("Tu sesión venció. Vuelve a entrar.");
+    toast(err.codigo === "red" ? "No se pudo conectar. Revisa tu internet." : err.mensaje || "No se pudo completar. Intenta de nuevo.");
+  }
+});
+
+registrar({ salir: () => cerrarSesion(), reintentar: () => render() });
+registrar(ingreso.acciones);
+registrarEnvios(ingreso.envios);
+registrarEntradas(ingreso.entradas);
+
+async function arrancar() {
+  try {
+    await datos.iniciar();
+    const m = await datos.yo();
+    if (m && m.estado !== "activa") {
+      await datos.salir();
+      estado.mensajeIngreso = "Tu cuenta está suspendida. Escríbele al equipo de JUMP.";
+    } else estado.yo = m;
+  } catch (e) {
+    if (e.codigo === "red") {
+      $("#app").innerHTML = `<div class="login-panel">${errorCarga(e)}</div>`;
+      registrar({ reintentar: () => location.reload() });
+      return;
+    }
+    await datos.salir(); // sesión vieja o inválida: se empieza de cero
+  }
+  addEventListener("hashchange", render);
+  render();
+}
+
+arrancar();

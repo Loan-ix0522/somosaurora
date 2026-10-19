@@ -1,7 +1,8 @@
 // Escenario fijo para las pruebas de permisos: personas en cada estado, una mentoría publicada y una en borrador.
 import { nuevoUsuario } from "./db.mjs";
 
-const ced = { E: "0912345675", E2: "0923456789", S: "0934567890", N: "0945678901" };
+// Cédulas con dígito verificador válido (la pantalla de ingreso las valida antes de enviar).
+const ced = { E: "0912345675", E2: "0923456784", S: "0934567892", N: "0945678902" };
 
 async function miembro(db, email, campos) {
   const id = await nuevoUsuario(db, { email, password: "clave-prueba-1" });

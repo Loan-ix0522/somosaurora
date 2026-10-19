@@ -389,3 +389,253 @@ create policy jump_avisos_vistos_leer on public.jump_avisos_vistos
 drop policy if exists jump_avisos_vistos_crear on public.jump_avisos_vistos;
 create policy jump_avisos_vistos_crear on public.jump_avisos_vistos
   for insert to authenticated with check (user_id = auth.uid() and public.jump_es_miembro());
+
+-- ============================================================
+-- 4. MURO DE LA COMUNIDAD
+-- ============================================================
+-- Los emprendedores publican directo (texto y/o foto) y comentan. El equipo oculta lo que no corresponde.
+create table if not exists public.jump_posts (
+  id         uuid primary key default gen_random_uuid(),
+  autor_id   uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  texto      text not null default '',
+  foto       text,
+  creado_en  timestamptz not null default now(),
+  oculto_en  timestamptz,
+  oculto_por uuid,
+  es_ejemplo boolean not null default false,
+  constraint jump_posts_texto_chk check (char_length(texto) <= 1000 and (char_length(btrim(texto)) > 0 or foto is not null)),
+  constraint jump_posts_foto_chk  check (foto ~ '^[0-9a-f-]{36}/[0-9a-f-]{36}\.(webp|jpg)$')
+);
+create index if not exists jump_posts_creado_idx on public.jump_posts (creado_en desc);
+create index if not exists jump_posts_autor_idx on public.jump_posts (autor_id, creado_en);
+
+create table if not exists public.jump_comentarios (
+  id         uuid primary key default gen_random_uuid(),
+  post_id    uuid not null references public.jump_posts (id) on delete cascade,
+  autor_id   uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  texto      text not null,
+  creado_en  timestamptz not null default now(),
+  oculto_en  timestamptz,
+  oculto_por uuid,
+  es_ejemplo boolean not null default false,
+  constraint jump_comentarios_texto_chk check (char_length(btrim(texto)) between 1 and 500)
+);
+create index if not exists jump_comentarios_post_idx on public.jump_comentarios (post_id, creado_en);
+create index if not exists jump_comentarios_autor_idx on public.jump_comentarios (autor_id, creado_en);
+
+-- Límites por persona en 24 h (frenan abusos y errores de doble envío).
+create or replace function public.jump_limite_posts()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if (select count(*) from public.jump_posts
+       where autor_id = new.autor_id and creado_en > now() - interval '24 hours') >= 10 then
+    raise exception 'limite_publicaciones';
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists jump_posts_limite on public.jump_posts;
+create trigger jump_posts_limite before insert on public.jump_posts
+  for each row execute function public.jump_limite_posts();
+
+create or replace function public.jump_limite_comentarios()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if (select count(*) from public.jump_comentarios
+       where autor_id = new.autor_id and creado_en > now() - interval '24 hours') >= 50 then
+    raise exception 'limite_comentarios';
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists jump_comentarios_limite on public.jump_comentarios;
+create trigger jump_comentarios_limite before insert on public.jump_comentarios
+  for each row execute function public.jump_limite_comentarios();
+
+create or replace function public.jump_mentoria_actualizada()
+returns trigger language plpgsql set search_path = public as $$
+begin
+  new.actualizada_en := now();
+  return new;
+end;
+$$;
+drop trigger if exists jump_mentorias_actualizada on public.jump_mentorias;
+create trigger jump_mentorias_actualizada before update on public.jump_mentorias
+  for each row execute function public.jump_mentoria_actualizada();
+
+-- ============================================================
+-- 5. ZOOM Y BITÁCORA (solo el servidor)
+-- ============================================================
+-- Cuenta de Zoom conectada (una sola). Los tokens van cifrados con JUMP_SECRET. Sin políticas: solo service_role.
+create table if not exists public.jump_zoom (
+  id                    boolean primary key default true,
+  zoom_user_id          text not null,
+  email                 text,
+  nombre                text,
+  refresh_token_cifrado text not null,
+  access_token_cifrado  text,
+  expira_en             timestamptz,
+  conectada_por         uuid,
+  conectada_en          timestamptz not null default now(),
+  constraint jump_zoom_unica_chk check (id)
+);
+
+-- Registro de acciones del equipo (crear cuentas, claves, suspensiones, Zoom, ejemplos). Lo escribe la API.
+create table if not exists public.jump_bitacora (
+  id        bigint generated always as identity primary key,
+  actor_id  uuid,
+  accion    text not null,
+  objetivo  text,
+  detalle   jsonb,
+  creado_en timestamptz not null default now()
+);
+
+-- ============================================================
+-- 6. DIRECTORIO (lo único que un emprendedor ve de los demás)
+-- ============================================================
+-- Nombre corto: primer nombre + inicial del apellido ("María José Vera" → "María V.").
+create or replace function public.jump_directorio()
+returns table (user_id uuid, nombre text, negocio text, rol text)
+language sql stable security definer set search_path = public as $$
+  select m.user_id,
+         case when m.rol = 'admin' then 'Equipo JUMP'
+              else w.p[1] || coalesce(' ' || left(w.p[case when array_length(w.p, 1) >= 3 then 3 else 2 end], 1) || '.', '')
+         end,
+         case when m.rol = 'admin' then null else m.negocio end,
+         m.rol
+    from public.jump_miembros m,
+         lateral (select regexp_split_to_array(btrim(m.nombres), '\s+') as p) w
+   where public.jump_es_miembro() and m.estado = 'activa';
+$$;
+
+-- Primera carpeta de una ruta de Storage como uuid (null si no lo es).
+create or replace function public.jump_storage_mentoria(name text)
+returns uuid language sql immutable set search_path = public as $$
+  select case when split_part(name, '/', 1) ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+              then split_part(name, '/', 1)::uuid end;
+$$;
+
+do $$
+declare f text;
+begin
+  foreach f in array array['public.jump_directorio()', 'public.jump_storage_mentoria(text)'] loop
+    execute format('revoke all on function %s from public, anon', f);
+    execute format('grant execute on function %s to authenticated', f);
+  end loop;
+  foreach f in array array['public.jump_limite_posts()', 'public.jump_limite_comentarios()', 'public.jump_mentoria_actualizada()'] loop
+    execute format('revoke all on function %s from public, anon, authenticated', f);
+  end loop;
+end $$;
+
+-- ============================================================
+-- 7. RLS (muro, Zoom y bitácora)
+-- ============================================================
+do $$
+declare t text;
+begin
+  foreach t in array array['jump_posts', 'jump_comentarios', 'jump_zoom', 'jump_bitacora'] loop
+    execute format('alter table public.%I enable row level security', t);
+    execute format('revoke all on table public.%I from anon', t);
+  end loop;
+end $$;
+revoke all on table public.jump_zoom from authenticated;
+revoke insert, update, delete on table public.jump_bitacora from authenticated;
+-- En el muro, lo único que se cambia es si está oculto (y lo hace el equipo).
+revoke update on table public.jump_posts, public.jump_comentarios from authenticated;
+grant update (oculto_en, oculto_por) on table public.jump_posts, public.jump_comentarios to authenticated;
+
+drop policy if exists jump_bitacora_leer on public.jump_bitacora;
+create policy jump_bitacora_leer on public.jump_bitacora
+  for select to authenticated using (public.jump_es_admin());
+
+drop policy if exists jump_posts_leer on public.jump_posts;
+create policy jump_posts_leer on public.jump_posts
+  for select to authenticated
+  using (public.jump_es_miembro() and (oculto_en is null or autor_id = auth.uid() or public.jump_es_admin()));
+drop policy if exists jump_posts_crear on public.jump_posts;
+create policy jump_posts_crear on public.jump_posts
+  for insert to authenticated
+  with check (autor_id = auth.uid() and public.jump_es_miembro() and oculto_en is null and oculto_por is null
+              and not es_ejemplo and (foto is null or split_part(foto, '/', 1) = auth.uid()::text));
+drop policy if exists jump_posts_borrar on public.jump_posts;
+create policy jump_posts_borrar on public.jump_posts
+  for delete to authenticated using (autor_id = auth.uid());
+drop policy if exists jump_posts_moderar on public.jump_posts;
+create policy jump_posts_moderar on public.jump_posts
+  for update to authenticated using (public.jump_es_admin()) with check (public.jump_es_admin());
+
+drop policy if exists jump_comentarios_leer on public.jump_comentarios;
+create policy jump_comentarios_leer on public.jump_comentarios
+  for select to authenticated
+  using (public.jump_es_miembro()
+         and (oculto_en is null or autor_id = auth.uid() or public.jump_es_admin())
+         and exists (select 1 from public.jump_posts p where p.id = post_id));
+drop policy if exists jump_comentarios_crear on public.jump_comentarios;
+create policy jump_comentarios_crear on public.jump_comentarios
+  for insert to authenticated
+  with check (autor_id = auth.uid() and public.jump_es_miembro() and oculto_en is null and oculto_por is null
+              and not es_ejemplo
+              and exists (select 1 from public.jump_posts p where p.id = post_id and p.oculto_en is null));
+drop policy if exists jump_comentarios_borrar on public.jump_comentarios;
+create policy jump_comentarios_borrar on public.jump_comentarios
+  for delete to authenticated using (autor_id = auth.uid());
+drop policy if exists jump_comentarios_moderar on public.jump_comentarios;
+create policy jump_comentarios_moderar on public.jump_comentarios
+  for update to authenticated using (public.jump_es_admin()) with check (public.jump_es_admin());
+
+-- ============================================================
+-- 8. STORAGE
+-- ============================================================
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types) values
+  ('jump-portadas', 'jump-portadas', true, 5242880, array['image/webp', 'image/jpeg', 'image/png']),
+  ('jump-material', 'jump-material', false, 20971520, array[
+     'application/pdf',
+     'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+     'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+     'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+     'image/jpeg', 'image/png', 'image/webp']),
+  ('jump-muro', 'jump-muro', false, 5242880, array['image/webp', 'image/jpeg'])
+on conflict (id) do update
+  set public = excluded.public, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists jump_portadas_admin on storage.objects;
+create policy jump_portadas_admin on storage.objects
+  for all to authenticated
+  using (bucket_id = 'jump-portadas' and public.jump_es_admin())
+  with check (bucket_id = 'jump-portadas' and public.jump_es_admin());
+
+drop policy if exists jump_material_leer on storage.objects;
+create policy jump_material_leer on storage.objects
+  for select to authenticated
+  using (bucket_id = 'jump-material'
+         and (public.jump_es_admin()
+              or (public.jump_es_miembro() and public.jump_mentoria_visible(public.jump_storage_mentoria(name)))));
+drop policy if exists jump_material_admin on storage.objects;
+create policy jump_material_admin on storage.objects
+  for all to authenticated
+  using (bucket_id = 'jump-material' and public.jump_es_admin())
+  with check (bucket_id = 'jump-material' and public.jump_es_admin());
+
+drop policy if exists jump_muro_leer on storage.objects;
+create policy jump_muro_leer on storage.objects
+  for select to authenticated using (bucket_id = 'jump-muro' and public.jump_es_miembro());
+drop policy if exists jump_muro_subir on storage.objects;
+create policy jump_muro_subir on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'jump-muro' and public.jump_es_miembro()
+              and (storage.foldername(name))[1] = auth.uid()::text);
+drop policy if exists jump_muro_borrar on storage.objects;
+create policy jump_muro_borrar on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'jump-muro' and ((storage.foldername(name))[1] = auth.uid()::text or public.jump_es_admin()));
+
+-- ============================================================
+-- 9. PRIMER ADMIN DE JUMP (EDITA Y CORRE APARTE, UNA SOLA VEZ)
+-- ============================================================
+-- a) Authentication → Users → Add user → Create new user:
+--      correo:  TU_USUARIO@equipo.laauroraescucha.com   (TU_USUARIO: minúsculas, números, punto o guion)
+--      clave:   la que vayas a usar · marca "Auto Confirm User".
+-- b) Cambia TU_USUARIO y TU NOMBRE abajo, quita los "--" de las 3 líneas y corre solo eso:
+-- insert into public.jump_miembros (user_id, rol, usuario, nombres, debe_cambiar_clave)
+-- select id, 'admin', 'TU_USUARIO', 'TU NOMBRE', false from auth.users
+--  where email = 'TU_USUARIO@equipo.laauroraescucha.com';

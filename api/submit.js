@@ -27,7 +27,7 @@ const TEMAS = [
 ];
 const SECTORES = [
   "Villa Club", "La Joya", "La Rioja", "Laguna Club", "Villa Italia", "La Piazza", "Avalon Plaza",
-  "Palmora Plaza", "Vermont Plaza", "Av. León Febres-Cordero", "Zona abierta o pueblo antiguo", "Otro sector",
+  "Palmora Plaza", "Vermont Plaza", "Villas del Rey", "Av. León Febres-Cordero", "Zona abierta o pueblo antiguo", "Otro sector",
 ];
 
 // Vercel rechaza cuerpos de más de 4,5 MB, así que la foto (que el navegador reduce

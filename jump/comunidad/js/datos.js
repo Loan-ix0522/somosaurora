@@ -446,6 +446,14 @@ export async function quitarMaterial(material) {
 
 export const crearReunionZoom = (claseId) => adminApi("zoom-reunion", { claseId });
 
+// ---------- ajustes (equipo) ----------
+export const zoomIniciar = () => adminApi("zoom-iniciar");
+export const zoomDesconectar = () => adminApi("zoom-desconectar");
+export const crearAdmin = ({ usuario, nombres }) => adminApi("crear-cuenta", { rol: "admin", usuario, nombres });
+export const ejemplosContar = () => adminApi("ejemplos-contar");
+export const ejemplosCargar = () => adminApi("ejemplos-cargar");
+export const ejemplosBorrar = () => adminApi("ejemplos-borrar", { confirmacion: "BORRAR" });
+
 export async function guardarZoomManual(claseId, url) {
   await iniciar();
   await q(sb.from("jump_clases_zoom").upsert({ clase_id: claseId, join_url: url, meeting_id: null, passcode: null, actualizado_en: ahoraISO() }, { onConflict: "clase_id" }));

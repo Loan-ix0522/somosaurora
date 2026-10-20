@@ -37,6 +37,10 @@ document.addEventListener("visibilitychange", () => {
 // ---------- ayudas ----------
 const emprendedores = () => A.miembros.filter((m) => m.rol === "emprendedor");
 export const activas = () => emprendedores().filter((m) => m.estado === "activa");
+// Las personas del equipo (cuentas admin), de lo ya cargado.
+export const equipoJump = () => (A ? A.miembros.filter((m) => m.rol === "admin") : []);
+// Igual que el servidor: hay ejemplos si queda alguna persona o mentoría marcada como ejemplo.
+export const hayEjemplos = () => !!A && (A.miembros.some((m) => m.esEjemplo) || A.mentorias.some((m) => m.esEjemplo));
 const suspendidas = () => emprendedores().filter((m) => m.estado === "suspendida");
 const nuncaEntraron = () => activas().filter((m) => !m.ultimoIngreso);
 const publicadas = () => A.mentorias.filter((m) => m.estado === "publicada");
@@ -98,6 +102,10 @@ function actividad() {
   return items.slice(0, 6).map(({ t, f: [i, h] }) => `<li><span class="ic-wrap">${ic(i)}</span><div class="grow">${h}<time datetime="${esc(t)}">${esc(haceCuanto(t))}</time></div></li>`).join("");
 }
 
+const franjaEjemplos = () => (hayEjemplos()
+  ? `<div class="banner banner-info franja" id="franjaEjemplos" role="note">${ic("grid")}<p class="grow"><b>Hay datos de ejemplo cargados</b> · son de mentira, para mostrar la plataforma.</p><button type="button" class="btn btn-ghost btn-sm" data-act="ejemplosborrar">Borrar ejemplos</button></div>`
+  : "");
+
 async function vResumen() {
   await cargar();
   const a = activas().length, s = suspendidas().length, nunca = nuncaEntraron(), c = proximas()[0];
@@ -117,6 +125,7 @@ async function vResumen() {
     titulo: "Resumen",
     html: `<div class="page-head"><div><h1>Resumen</h1><p class="sub">Primera edición de JUMP.</p></div>
       <div class="head-actions"><a class="btn btn-ghost" href="#a/clases?nueva">${ic("video")}Programar clase</a><a class="btn btn-primary" href="#a/editor/nueva">${ic("plus")}Nueva mentoría</a></div></div>
+    ${franjaEjemplos()}
     <section class="panel cupos" aria-labelledby="t-cup">
       <div><h2 id="t-cup">Emprendedores</h2><p><b>${a}</b> ${a === 1 ? "cuenta activa" : "cuentas activas"} · <b>${s}</b> ${s === 1 ? "suspendida" : "suspendidas"}${nunca.length ? ` · <b>${nunca.length}</b> sin entrar todavía` : ""}</p></div>
       <div class="meter" role="img" aria-label="${a} activas, ${s} suspendidas">${a + s ? `<i class="m-act" style="flex:${a}"></i><i class="m-sus" style="flex:${s}"></i>` : '<i class="m-free" style="flex:1"></i>'}</div>
@@ -306,6 +315,8 @@ async function enviarGrabacion(f, btn) {
 }
 
 // ---------- emprendedores ----------
+const TXT_SUSP = "No podrá entrar a la Comunidad JUMP ni verá las invitaciones a clases. Su avance se guarda y puedes reactivar su cuenta cuando quieras.";
+const TXT_SUSP_EQUIPO = "No podrá entrar al panel del equipo de JUMP. Puedes reactivar su cuenta cuando quieras.";
 const DIALOGOS = {
   dlgAdd: () => `<dialog class="drawer" id="dlgAdd" aria-labelledby="addTitulo">
   <form id="addForm" novalidate>
@@ -327,7 +338,7 @@ const DIALOGOS = {
   <form id="suspForm" novalidate>
     <div class="dlg-body">
       <div class="dlg-head"><span class="dlg-ic">${ic("ban")}</span><h2 id="suspTitulo">¿Suspender a <span id="suspNombre"></span>?</h2></div>
-      <p>No podrá entrar a la Comunidad JUMP ni verá las invitaciones a clases. Su avance se guarda y puedes reactivar su cuenta cuando quieras.</p>
+      <p id="suspTexto">${TXT_SUSP}</p>
       <div class="field"><label class="label" for="suspMotivo">Motivo <span class="opt">(opcional, solo lo ve el equipo)</span></label><textarea class="textarea" id="suspMotivo" rows="3" maxlength="200"></textarea></div>
     </div>
     <div class="dlg-foot"><button type="button" class="btn btn-ghost" data-act="cerrar">Cancelar</button><button class="btn btn-danger" type="submit">Suspender</button></div>
@@ -355,7 +366,7 @@ const DIALOGOS = {
 </dialog>`,
 };
 
-function prepararDialogos() {
+export function prepararDialogos() {
   for (const [id, html] of Object.entries(DIALOGOS)) asegurarDialogo(id, html());
   // La clave temporal se muestra una sola vez: al cerrar la ventana se borra de la página.
   const d = $("#dlgClave");
@@ -416,12 +427,14 @@ async function vEmprendedores() {
   };
 }
 
-function mostrarClave(persona, clave, creada) {
+export function mostrarClave(persona, clave, creada) {
   const nombre = primerNombre(persona.nombres);
+  const equipo = persona.rol === "admin";
+  const quien = equipo ? `su usuario (${persona.usuario})` : `su cédula (${persona.cedula})`;
   $("#claveTitulo").textContent = creada ? `Cuenta creada para ${nombre}` : `Clave nueva para ${nombre}`;
   $("#claveTexto").textContent = creada
-    ? `Entra con su cédula (${persona.cedula}) y esta clave temporal.`
-    : `Su clave anterior ya no funciona. Entra con su cédula (${persona.cedula}) y esta clave temporal.`;
+    ? `Entra con ${quien} y esta clave temporal.`
+    : `Su clave anterior ya no funciona. Entra con ${quien} y esta clave temporal.`;
   $("#claveCodigo").textContent = clave;
   const wa = $("#claveWa");
   if (persona.whatsapp) {
@@ -438,6 +451,7 @@ function mostrarClave(persona, clave, creada) {
     wa.removeAttribute("href");
     wa.hidden = true;
   }
+  $("#claveSinWa").textContent = equipo ? "Copia la clave y envíasela tú." : "No tiene WhatsApp registrado: copia la clave y envíasela tú.";
   $("#claveSinWa").hidden = !!persona.whatsapp;
   $("#dlgClave").showModal();
 }
@@ -472,6 +486,19 @@ async function enviarAgregar(f, btn) {
   mostrarClave({ nombres, cedula, whatsapp: wa }, r.clave, true);
 }
 
+// Un rechazo del servidor (la cuenta ya no existe, la última persona del equipo…) se avisa fuera de la ventana: un aviso
+// dibujado detrás de una ventana modal abierta no se ve. Devuelve undefined si el servidor se negó.
+export async function conAviso(dialogo, promesa) {
+  try { return await promesa; }
+  catch (e) {
+    if (!(e instanceof datos.ErrorJump) || !["invalido", "prohibido", "servidor"].includes(e.codigo)) throw e;
+    dialogo.close();
+    invalidar();
+    refrescar();
+    toast(e.mensaje || "No se pudo completar. Intenta de nuevo.");
+  }
+}
+
 async function suspenderCuenta(userId, motivo) {
   await datos.adminApi("suspender", { userId, motivo });
   invalidar();
@@ -482,7 +509,7 @@ async function enviarSuspender(f, btn) {
   const e = miembroDe(objetivo);
   if (!e) return $("#dlgSusp").close();
   const motivo = $("#suspMotivo").value.trim();
-  await ocupado(btn, datos.adminApi("suspender", { userId: e.userId, motivo }));
+  if (!(await conAviso($("#dlgSusp"), ocupado(btn, datos.adminApi("suspender", { userId: e.userId, motivo }))))) return;
   $("#dlgSusp").close();
   invalidar();
   refrescar();
@@ -499,7 +526,8 @@ async function reactivarCuenta(userId, nombres, motivoAnterior) {
 async function enviarReset(f, btn) {
   const e = miembroDe(objetivo);
   if (!e) return $("#dlgReset").close();
-  const r = await ocupado(btn, datos.adminApi("clave-nueva", { userId: e.userId }));
+  const r = await conAviso($("#dlgReset"), ocupado(btn, datos.adminApi("clave-nueva", { userId: e.userId })));
+  if (!r) return;
   $("#dlgReset").close();
   invalidar();
   mostrarClave(e, r.clave, false);
@@ -577,6 +605,7 @@ export const acciones = {
     prepararDialogos();
     objetivo = e.userId;
     $("#suspNombre").textContent = e.nombres;
+    $("#suspTexto").textContent = e.rol === "admin" ? TXT_SUSP_EQUIPO : TXT_SUSP;
     $("#suspForm").reset();
     $("#dlgSusp").showModal();
   },

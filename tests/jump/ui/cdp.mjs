@@ -188,6 +188,53 @@ const abrirMuro = async (p, { equipo = false } = {}) => {
 };
 const enPost = (id, sel = "") => `[data-post="${id}"] ${sel}`.trim();
 
+// ---- ajustes: Zoom y equipo ----
+// Deja la cuenta de Zoom del servidor como se pide (por la API real).
+async function asegurarZoom(conectada) {
+  const z = await apiAdmin("zoom-estado");
+  if (!!z.conectada === conectada) return;
+  if (conectada) await conectarZoom();
+  else if (!(await apiAdmin("zoom-desconectar")).ok) throw new Error("no se desconectó Zoom");
+}
+const bytes64 = (s) => Buffer.from(s).toString("base64");
+// Atrapa lo que la app manda a zoom.us (la página real no se visita) y guarda las direcciones.
+async function atraparZoomWeb(urls, fn) {
+  const alMensaje = (e) => {
+    const m = JSON.parse(e.data);
+    if (m.method !== "Fetch.requestPaused") return;
+    urls.push(m.params.request.url);
+    send("Fetch.fulfillRequest", { requestId: m.params.requestId, responseCode: 200, responseHeaders: [{ name: "Content-Type", value: "text/html" }], body: bytes64("<p>Zoom falso</p>") });
+  };
+  ws.addEventListener("message", alMensaje);
+  await send("Fetch.enable", { patterns: [{ urlPattern: "https://zoom.us/*" }] });
+  try { return await fn(); } finally { await send("Fetch.disable"); ws.removeEventListener("message", alMensaje); }
+}
+// Mientras corre fn, la consulta del estado de Zoom responde con un error 500.
+async function conZoomCaido(fn) {
+  erroresEsperados.push([/\/api\/jump-admin/, /status of 500/]);
+  const alMensaje = (e) => {
+    const m = JSON.parse(e.data);
+    if (m.method !== "Fetch.requestPaused") return;
+    const { requestId, request } = m.params;
+    if (/zoom-estado/.test(request.postData || "")) send("Fetch.fulfillRequest", { requestId, responseCode: 500, responseHeaders: [{ name: "Content-Type", value: "application/json" }], body: bytes64('{"ok":false,"error":"x"}') });
+    else send("Fetch.continueRequest", { requestId });
+  };
+  ws.addEventListener("message", alMensaje);
+  await send("Fetch.enable", { patterns: [{ urlPattern: "*/api/jump-admin*" }] });
+  try { return await fn(); } finally { await send("Fetch.disable"); ws.removeEventListener("message", alMensaje); }
+}
+const abrirAjustes = async () => {
+  await entrarEquipo();
+  await ir("a/ajustes");
+  await esperar(`!!document.querySelector("#zoomEstado")`);
+};
+const filaEquipo = (id, sel = "") => `[data-equipo="${id}"] ${sel}`.trim();
+const adminNuevo = async (usuario, nombres) => {
+  const r = await apiAdmin("crear-cuenta", { rol: "admin", usuario, nombres });
+  if (r.status !== 201) throw new Error("no se creó el admin: " + JSON.stringify(r));
+  return r.userId;
+};
+
 // ---------- escenarios ----------
 const ESCENARIOS = {
   ingreso: {
@@ -778,6 +825,215 @@ const ESCENARIOS = {
         await dormir(200);
         const a = await desborde();
         return (e === 0 && a === 0) || `desborde: emprendedor ${e}px, equipo ${a}px`;
+      } finally {
+        await send("Emulation.setDeviceMetricsOverride", { width: W, height: H, deviceScaleFactor: 1, mobile: movil });
+      }
+    },
+    csp: async () => {
+      const csp = consola.filter((c) => /Content Security Policy|Refused to/i.test(c));
+      return csp.length === 0 || csp.join(" | ");
+    },
+  },
+
+  ajustes: {
+    "zoom-conectar": async () => {
+      await asegurarZoom(false);
+      await abrirAjustes();
+      const antes = await texto("#zoomEstado");
+      await foto("ajustes-zoom-sin-conectar");
+      const urls = [];
+      await atraparZoomWeb(urls, async () => {
+        await clic('[data-act="zoomconectar"]');
+        await esperar(`location.hostname === "zoom.us"`);
+      });
+      const u = new URL(urls[0]);
+      if (u.pathname !== "/oauth/authorize" || u.searchParams.get("client_id") !== "zoom-id") return "autorización: " + urls[0];
+      // Zoom devuelve a la persona al callback con el código y el mismo state.
+      await send("Page.navigate", { url: sim.url + "/api/jump-zoom-callback?" + new URLSearchParams({ code: "codigo-ui", state: u.searchParams.get("state") }) });
+      await esperar(`location.pathname === "/jump/comunidad/" && !!document.querySelector('[data-act="zoomdesconectar"]')`);
+      await esperar(`location.hash === "#a/ajustes"`); // se limpió ?zoom=aviso
+      const t = await texto("#zoomEstado");
+      const aviso = await esperar(`document.querySelector("#toast.show")?.textContent.trim()`);
+      await foto("ajustes-zoom-conectada");
+      return (antes.includes("Sin conectar") && t.includes("Conectada como") && t.includes("jump@zoom.test") && aviso.includes("Zoom quedó conectado")) || JSON.stringify({ antes, t, aviso });
+    },
+    "zoom-desconectar": async () => {
+      await asegurarZoom(true);
+      await abrirAjustes();
+      await esperar(`!!document.querySelector('[data-act="zoomdesconectar"]')`);
+      await clic('[data-act="zoomdesconectar"]');
+      await esperar(`document.querySelector("#dlgZoomOff")?.open`);
+      await foto("ajustes-zoom-desconectar");
+      await clic('#dlgZoomOff [data-act="cerrar"]');
+      if (!(await apiAdmin("zoom-estado")).conectada) return "Cancelar desconectó la cuenta";
+      await clic('[data-act="zoomdesconectar"]');
+      await esperar(`document.querySelector("#dlgZoomOff")?.open`);
+      await clic("#zoomOffForm [type=submit]");
+      await esperar(`!document.querySelector("#dlgZoomOff")?.open && !document.querySelector('[data-act="zoomdesconectar"]')`);
+      const t = await texto("#zoomEstado");
+      const z = await apiAdmin("zoom-estado");
+      return (!z.conectada && t.includes("Sin conectar")) || JSON.stringify({ t, z });
+    },
+    "zoom-no-configurado": async () => {
+      const guardado = { id: process.env.ZOOM_CLIENT_ID, secreto: process.env.ZOOM_CLIENT_SECRET };
+      delete process.env.ZOOM_CLIENT_ID;
+      delete process.env.ZOOM_CLIENT_SECRET;
+      try {
+        await abrirAjustes();
+        const t = await texto("#zoomEstado");
+        const boton = await ev(`!!document.querySelector('[data-act="zoomconectar"]')`);
+        await foto("ajustes-zoom-no-configurado");
+        return (t.includes("todavía no está configurado") && !boton) || JSON.stringify({ t, boton });
+      } finally {
+        process.env.ZOOM_CLIENT_ID = guardado.id;
+        process.env.ZOOM_CLIENT_SECRET = guardado.secreto;
+      }
+    },
+    "zoom-sin-respuesta": async () => {
+      let t;
+      await conZoomCaido(async () => {
+        await abrirAjustes();
+        t = await texto("#zoomEstado");
+        if (!(await ev(`!!document.querySelector('[data-act="zoomreintentar"]')`))) throw new Error("sin botón para reintentar");
+      });
+      await foto("ajustes-zoom-sin-respuesta");
+      await clic('[data-act="zoomreintentar"]');
+      await esperar(`/Sin conectar|Conectada/.test(document.querySelector("#zoomEstado")?.textContent || "")`);
+      return t.includes("No se pudo consultar") || t;
+    },
+    "equipo-agregar": async () => {
+      await abrirAjustes();
+      await esperar(`!!document.querySelector('[data-act="equipoagregar"]')`);
+      const propia = await ev(`(() => { const f = document.querySelector('[data-equipo="${X.A.id}"]'); return f ? { tu: f.textContent.includes("Tú"), suspender: !!f.querySelector('[data-act="suspender"]') } : null; })()`);
+      if (!propia || !propia.tu || propia.suspender) return "la fila propia: " + JSON.stringify(propia);
+      await clic('[data-act="equipoagregar"]');
+      await esperar(`document.querySelector("#dlgEquipo")?.open`);
+      await clic("#equipoForm [type=submit]");
+      const vacios = await ev(`document.querySelectorAll("#equipoForm .err:not([hidden])").length`);
+      if (vacios !== 2) return "errores con el formulario vacío: " + vacios;
+      await escribir("#eqUsuario", "Ana.Admin");
+      await escribir("#eqNombres", "Otra Persona");
+      await clic("#equipoForm [type=submit]");
+      const rep = await esperar(`!document.querySelector("#eqUsuarioErr").hidden && document.querySelector("#eqUsuarioErr").textContent`);
+      if (!rep.includes("Ya existe una cuenta con ese usuario")) return rep;
+      await escribir("#eqUsuario", "no vale ñ");
+      await clic("#equipoForm [type=submit]");
+      const malo = await esperar(`!document.querySelector("#eqUsuarioErr").hidden && document.querySelector("#eqUsuarioErr").textContent`);
+      if (!malo.includes("de 3 a 30 caracteres")) return malo;
+      await escribir("#eqUsuario", "luis.equipo");
+      await escribir("#eqNombres", "Luis Alberto Mora");
+      await foto("ajustes-equipo-agregar");
+      await dobleClic("#equipoForm [type=submit]");
+      await esperar(`document.querySelector("#dlgClave")?.open`);
+      const clave = await texto("#claveCodigo"), titulo = await texto("#claveTitulo"), detalle = await texto("#claveTexto");
+      const sinWa = await ev(`document.querySelector("#claveWa").hidden`);
+      await foto("ajustes-equipo-clave");
+      const filas = (await sql("select user_id, rol, debe_cambiar_clave from public.jump_miembros where usuario = 'luis.equipo'")).rows;
+      if (filas.length !== 1 || filas[0].rol !== "admin" || !filas[0].debe_cambiar_clave) return "cuentas creadas: " + JSON.stringify(filas);
+      if (!/^JUMP-\d{4}-\d{4}$/.test(clave)) return "clave: " + clave;
+      if (!titulo.includes("Cuenta creada para Luis") || !detalle.includes("luis.equipo") || detalle.includes("cédula") || !sinWa) return JSON.stringify({ titulo, detalle, sinWa });
+      await clic('#dlgClave [data-act="cerrar"]');
+      const N = filas[0].user_id;
+      await esperar(`!!document.querySelector('${filaEquipo(N)}')`);
+      // suspender y reactivar a la persona nueva
+      await clic(filaEquipo(N, '[data-act="suspender"]'));
+      await esperar(`document.querySelector("#dlgSusp")?.open`);
+      await clic("#suspForm [type=submit]");
+      await esperar(`!!document.querySelector('${filaEquipo(N, '[data-act="reactivar"]')}')`);
+      const s = await fila("select estado from public.jump_miembros where user_id = $1", [N]);
+      if (s.estado !== "suspendida") return "estado: " + s.estado;
+      await clic(filaEquipo(N, '[data-act="reactivar"]'));
+      await esperar(`!!document.querySelector('${filaEquipo(N, '[data-act="suspender"]')}')`);
+      // clave nueva
+      await clic(filaEquipo(N, '[data-act="clavenueva"]'));
+      await esperar(`document.querySelector("#dlgReset")?.open`);
+      await clic("#resetForm [type=submit]");
+      await esperar(`document.querySelector("#dlgClave")?.open`);
+      const nueva = await texto("#claveCodigo"), t2 = await texto("#claveTexto");
+      if (!/^JUMP-\d{4}-\d{4}$/.test(nueva) || nueva === clave || !t2.includes("luis.equipo")) return JSON.stringify({ nueva, t2 });
+      await clic('#dlgClave [data-act="cerrar"]');
+      // lo que dice el servidor de la cuenta propia
+      const r = await apiAdmin("suspender", { userId: X.A.id });
+      return (r.status === 400 && r.error === "No puedes suspender tu propia cuenta.") || JSON.stringify(r);
+    },
+    "equipo-rechazo": async () => {
+      erroresEsperados.push([/jump-admin/, /status of 404/]); // el rechazo de este escenario es a propósito
+      const N = await adminNuevo("prueba.rechazo", "Prueba Rechazo");
+      await abrirAjustes();
+      await esperar(`!!document.querySelector('${filaEquipo(N)}')`);
+      // la cuenta desaparece del servidor mientras la página la sigue mostrando
+      await sql("delete from public.jump_miembros where user_id = $1", [N]);
+      await clic(filaEquipo(N, '[data-act="suspender"]'));
+      await esperar(`document.querySelector("#dlgSusp")?.open`);
+      await clic("#suspForm [type=submit]");
+      // el aviso del servidor se ve fuera de la ventana (detrás de una ventana modal no se vería)
+      const aviso = await esperar(`!document.querySelector("#dlgSusp").open && document.querySelector("#toast.show")?.textContent.trim()`);
+      await esperar(`!document.querySelector('${filaEquipo(N)}')`); // la lista se vuelve a pedir
+      return aviso.includes("No encontramos esa cuenta") || aviso;
+    },
+    "ejemplos-cargar": async () => {
+      if ((await apiAdmin("ejemplos-contar")).cargados) return "ya había ejemplos";
+      await entrarEquipo();
+      await esperar(`!!document.querySelector(".cupos")`);
+      if (await ev(`!!document.querySelector("#franjaEjemplos")`)) return "la franja aparece sin ejemplos";
+      await ir("a/ajustes");
+      await esperar(`!!document.querySelector('[data-act="ejemploscargar"]')`);
+      const antes = await texto("#ejemplosEstado");
+      await foto("ajustes-ejemplos-vacio");
+      await clic('[data-act="ejemploscargar"]');
+      await esperar(`!!document.querySelector('[data-act="ejemplosborrar"]')`);
+      const despues = await texto("#ejemplosEstado");
+      const n = (await fila("select count(*)::int n from public.jump_miembros where es_ejemplo")).n;
+      await ir("a/resumen");
+      await esperar(`!!document.querySelector("#franjaEjemplos")`);
+      const franja = await texto("#franjaEjemplos");
+      await foto("ajustes-franja-ejemplos");
+      return (antes.includes("No hay") && despues.includes("Cargados") && n > 0 && franja.includes("Hay datos de ejemplo cargados") && franja.includes("Borrar ejemplos")) || JSON.stringify({ antes, despues, n, franja });
+    },
+    "ejemplos-borrar": async () => {
+      // una persona real comentó en una publicación de ejemplo: ese comentario también se va
+      const post = (await fila("select id from public.jump_posts where es_ejemplo order by creado_en limit 1")).id;
+      await sql("insert into public.jump_comentarios (post_id, autor_id, texto) values ($1, $2, 'Comentario real sobre un ejemplo')", [post, X.E.id]);
+      await entrarEquipo();
+      await esperar(`!!document.querySelector("#franjaEjemplos")`);
+      await clic('#franjaEjemplos [data-act="ejemplosborrar"]');
+      await esperar(`document.querySelector("#dlgBorrarEj")?.open`);
+      const aviso = await texto("#borrarEjAviso");
+      const dis = () => ev(`document.querySelector("#borrarEjForm [type=submit]").disabled`);
+      if (!(await dis())) return "el botón rojo está activo sin escribir nada";
+      await escribir("#borrarEjTexto", "borrar");
+      if (!(await dis())) return "el botón se activó con minúsculas";
+      await escribir("#borrarEjTexto", "BORRAR");
+      if (await dis()) return "el botón sigue apagado con BORRAR";
+      await foto("ajustes-ejemplos-borrar");
+      await clic("#borrarEjForm [type=submit]");
+      await esperar(`!document.querySelector("#dlgBorrarEj").open && !document.querySelector("#franjaEjemplos")`);
+      const tablas = ["jump_miembros", "jump_mentorias", "jump_modulos", "jump_materiales", "jump_clases", "jump_avisos", "jump_posts", "jump_comentarios"];
+      let quedan = 0;
+      for (const t of tablas) quedan += (await fila(`select count(*)::int n from public.${t} where es_ejemplo`)).n;
+      const real = await fila("select count(*)::int n from public.jump_comentarios where texto = 'Comentario real sobre un ejemplo'");
+      const e = await fila("select count(*)::int n from public.jump_miembros where user_id = $1", [X.E.id]);
+      if (quedan || real.n || e.n !== 1) return JSON.stringify({ quedan, comentarioRealSigue: real.n, emprendedorReal: e.n });
+      return aviso.includes("1 comentario real") || aviso;
+    },
+    "ajustes-sin-desborde": async () => {
+      await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+      try {
+        await asegurarZoom(true);
+        await abrirAjustes();
+        await esperar(`!!document.querySelector('[data-act="zoomdesconectar"]') && document.querySelectorAll("[data-equipo]").length > 1`);
+        await dormir(200);
+        const pagina = await desborde();
+        await foto("ajustes-390");
+        const caben = {};
+        for (const [abrirDlg, id] of [['[data-act="equipoagregar"]', "dlgEquipo"], ['[data-act="zoomdesconectar"]', "dlgZoomOff"]]) {
+          await clic(abrirDlg);
+          await esperar(`document.querySelector("#${id}")?.open`);
+          caben[id] = await ev(`(() => { const r = document.querySelector("#${id}").getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; })()`);
+          await foto("ajustes-390-" + id);
+          await clic(`#${id} [data-act="cerrar"]`);
+        }
+        return (pagina === 0 && Object.values(caben).every(Boolean)) || JSON.stringify({ pagina, caben });
       } finally {
         await send("Emulation.setDeviceMetricsOverride", { width: W, height: H, deviceScaleFactor: 1, mobile: movil });
       }

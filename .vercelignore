@@ -1,2 +1,9 @@
 # Lo que no se publica en Vercel (no es parte de la web).
-tests/
+# Ninguna página ni función de /api lee estas carpetas: son esquema SQL, documentación,
+# diseño, marketing, herramientas locales (scripts/csp.mjs se corre a mano) y pruebas.
+/supabase/
+/docs/
+/design/
+/marketing/
+/scripts/
+/tests/

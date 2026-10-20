@@ -1,7 +1,8 @@
 // Emprendedor: inicio, mentorías, aula, clases en vivo, avisos y perfil (mockup "El aula", con datos reales).
 import { $, $$, esc, ic, fig, plural, toast, fieldErr, ocupado, hop, reduce } from "./ui.js";
 import * as datos from "./datos.js";
-import { partes, rango, fechaCorta, haceCuanto, estadoClase } from "./fechas.js";
+import { rango, fechaCorta, haceCuanto, estadoClase } from "./fechas.js";
+import { dateTile, whenText, nowPill, vacio, mMeta, TIPOS, tipoArchivo, tamano, dominio, ftype } from "./piezas.js";
 import { embedVideo, icsDeClase } from "./medios.js";
 import { whatsapp as normWhatsapp, texto as normTexto } from "./normalizar.js";
 import { estado, ir, refrescar } from "./app.js";
@@ -84,19 +85,9 @@ function mStatus(m) {
   if (d > 0) return '<span class="pill pill-white">En curso</span>';
   return "";
 }
-function mMeta(m) {
-  const vivo = m.modulos.filter((x) => x.tipo === "vivo").length;
-  return plural(m.modulos.length, "módulo", "módulos") + (vivo ? ` · ${vivo} en vivo` : "");
-}
 const mCard = (m) => `<a class="m-card" href="#e/m/${m.id}">
     <div class="m-cover"><img src="${esc(m.portada)}" alt="" loading="lazy">${mStatus(m)}</div>
     <div class="m-body"><h3>${esc(m.titulo)}</h3><p class="m-meta">${mMeta(m)}</p>${prog(m)}</div></a>`;
-function dateTile(c, cls = "") {
-  const p = partes(c.iniciaEn);
-  return `<span class="date-tile ${cls}" aria-hidden="true">${p.dow}<b>${p.d}</b>${p.mon}</span>`;
-}
-const whenText = (c) => `${fechaCorta(c.iniciaEn)} · ${rango(c.iniciaEn, c.duracionMin)}`;
-const nowPill = '<span class="pill pill-sun pill-now">En vivo ahora</span>';
 const waitNote = `<span class="zoom-wait">${ic("lock")}El enlace de Zoom se abre 15 min antes</span>`;
 const goingBtn = (c, cls) =>
   `<button type="button" class="btn ${cls}" data-act="asistire" data-id="${c.id}" aria-pressed="${c.asistire}">${c.asistire ? ic("check") + "Asistiré" : "Confirmar asistencia"}</button>`;
@@ -132,32 +123,13 @@ function avisoItem(a) {
   </article>`;
 }
 
-const vacio = (titulo, texto, extra = "") => `<div class="panel empty">${fig()}<h3>${titulo}</h3><p>${texto}</p>${extra}</div>`;
-
-const TIPOS = { pdf: "PDF", xls: "XLS", doc: "DOC", ppt: "PPT", img: "IMG", link: "WEB" };
-function tipoArchivo(f) {
-  if (f.tipo === "enlace") return "link";
-  const ext = ((/\.([a-z0-9]{1,5})$/i.exec(f.ruta || "") || [])[1] || "").toLowerCase();
-  if (ext === "pdf" || f.mime === "application/pdf") return "pdf";
-  if (/^xlsx?$/.test(ext)) return "xls";
-  if (/^docx?$/.test(ext)) return "doc";
-  if (/^pptx?$/.test(ext)) return "ppt";
-  if (/^(jpe?g|png|webp)$/.test(ext) || /^image\//.test(f.mime || "")) return "img";
-  return "doc";
-}
-function tamano(bytes) {
-  if (!bytes) return "";
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1).replace(".", ",")} MB`;
-}
-const dominio = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return "Enlace"; } };
 function fileRow(f) {
   const k = tipoArchivo(f), enPestana = k === "pdf" || k === "img";
   const meta = f.tipo === "enlace" ? dominio(f.url) : [TIPOS[k], tamano(f.bytes)].filter(Boolean).join(" · ");
   const boton = f.tipo === "enlace"
     ? `<a class="btn btn-ghost btn-sm" href="${esc(f.url)}" target="_blank" rel="noopener noreferrer">${ic("link")}Abrir</a>`
     : `<button type="button" class="btn btn-ghost btn-sm" data-act="material" data-id="${f.id}">${ic(enPestana ? "eye" : "download")}${enPestana ? "Abrir" : "Descargar"}</button>`;
-  return `<li class="file"><span class="ftype ${k === "ppt" ? "doc" : k}">${TIPOS[k]}</span><div class="grow"><b>${esc(f.nombre)}</b><span class="m-meta">${esc(meta)}</span></div>${boton}</li>`;
+  return `<li class="file">${ftype(f)}<div class="grow"><b>${esc(f.nombre)}</b><span class="m-meta">${esc(meta)}</span></div>${boton}</li>`;
 }
 const listaArchivos = (titulo, lista) =>
   lista.length ? `<div class="files"><section><h2>${titulo}</h2><ul class="file-list">${lista.map(fileRow).join("")}</ul></section></div>` : "";

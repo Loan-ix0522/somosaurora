@@ -302,7 +302,28 @@ p{margin:0}
 .search{position:relative;flex:1;max-width:360px;min-width:220px}
 .search .ic{position:absolute;left:13px;top:12px;color:var(--ink-3)}
 .search .input{padding-left:42px}
-.table-wrap{overflow-x:auto}
+/* Las tablas se acomodan al ancho que tienen (con el menú lateral, a 1024 px quedan ~710 px), no al de la pantalla. */
+.table-wrap{overflow-x:auto;container:tabla/inline-size}
+@container tabla (max-width:1000px){
+  .rtable th,.rtable td{padding-left:12px;padding-right:12px}
+  .rtable th{white-space:normal}
+  .rtable th.c-hide,.rtable td.c-hide{display:none}
+  .rtable .who{min-width:0}
+  .rtable .row-actions .lbl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  .rtable .row-actions .btn-state{min-width:0}
+}
+/* Angostas: cada fila es una ficha. */
+@container tabla (max-width:640px){
+  .rtable thead{display:none}
+  .rtable,.rtable tbody,.rtable tr,.rtable td{display:block;width:100%}
+  .rtable tr{display:grid;grid-template-columns:1fr auto;gap:8px 12px;padding:14px 16px;border-bottom:1px solid var(--line)}
+  .rtable td{padding:0;border:0}
+  .rtable td[data-l]::before{content:attr(data-l) " · ";color:var(--ink-3);font-size:13px}
+  .rtable td.c-who{grid-column:1/-1}
+  .rtable td.c-act{grid-column:1/-1}
+  .rtable .row-actions{justify-content:flex-start}
+  .rtable .row-actions .lbl{position:static;width:auto;height:auto;overflow:visible;clip:auto}
+}
 table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
 th{padding:12px 16px;border-bottom:1px solid var(--line);text-align:left;font-size:13px;font-weight:700;color:var(--ink-3);white-space:nowrap;background:#FCFDFF}
 td{padding:13px 16px;border-bottom:1px solid var(--line);vertical-align:middle;font-size:14.5px}
@@ -399,6 +420,14 @@ tr.is-new{animation:newrow 2.4s var(--ease-out)}
 .sched{padding:24px;display:grid;gap:16px;margin-bottom:28px}
 .sched[hidden]{display:none}
 .channels{display:grid;gap:10px;padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:var(--sky-50)}
+.zoom-modo{display:grid;gap:10px;min-width:0;margin:0;padding:0;border:0}
+.zoom-modo legend{padding:0;margin-bottom:4px}
+.zoom-modo .hint{margin:-4px 0 0 28px}
+.zoom-modo .field{margin-left:28px}
+.check input:disabled+span{color:var(--ink-3);cursor:not-allowed}
+.class-row .grow form{margin-top:6px}
+.btn-danger-link{justify-self:center;color:var(--bad)}
+.btn-danger-link:hover{color:var(--bad)}
 .class-list{display:grid;gap:12px}
 .class-row{display:flex;align-items:center;gap:18px;padding:16px 18px}
 .class-row .grow{flex:1;min-width:0;display:grid;gap:4px}
@@ -495,16 +524,6 @@ dialog[open]{animation:dlg .22s var(--ease-out)}
   .mod-body{padding:4px 14px 18px}
   .mod-err{padding:0 14px 10px}
   .type-tag{display:none}
-  /* tablas como listas */
-  .rtable thead{display:none}
-  .rtable,.rtable tbody,.rtable tr,.rtable td{display:block;width:100%}
-  .rtable tr{display:grid;grid-template-columns:1fr auto;gap:8px 12px;padding:14px 16px;border-bottom:1px solid var(--line)}
-  .rtable td{padding:0;border:0}
-  .rtable td[data-l]::before{content:attr(data-l) " · ";color:var(--ink-3);font-size:13px}
-  .rtable td.c-who{grid-column:1/-1}
-  .rtable td.c-act{grid-column:1/-1}
-  .rtable .row-actions{justify-content:flex-start}
-  .rtable td.c-hide{display:none}
 }
 @media (max-width:560px){
   .player.is-live{aspect-ratio:auto;min-height:220px;padding:28px 18px}

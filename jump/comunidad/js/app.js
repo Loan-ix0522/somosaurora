@@ -4,17 +4,20 @@ import { $, esc, ic, logo, fig, iniciales, toast } from "./ui.js";
 import * as datos from "./datos.js";
 import * as ingreso from "./vistas-ingreso.js";
 import * as emprendedor from "./vistas-emprendedor.js";
+import * as admin from "./vistas-admin.js";
+import * as editor from "./vistas-editor.js";
 
 export const estado = { yo: null, avisosNuevos: 0, mensajeIngreso: "" };
-const ACT = {}, ENVIOS = {}, ENTRADAS = {}, RUTAS = [];
-// Cada módulo de vistas aporta { rutas, acciones, envios, entradas, limpiar }.
-const MODULOS = [ingreso, emprendedor];
+const ACT = {}, ENVIOS = {}, ENTRADAS = {}, CAMBIOS = {}, RUTAS = [];
+// Cada módulo de vistas aporta { rutas, acciones, envios, entradas, cambios, limpiar }.
+const MODULOS = [ingreso, emprendedor, admin, editor];
 const MSG_SUSPENDIDA = "Tu cuenta está suspendida. Escríbele al equipo de JUMP.";
 const MSG_SESION = "Tu sesión venció. Vuelve a entrar.";
 
 export function registrar(acciones) { Object.assign(ACT, acciones); }
 export function registrarEnvios(envios) { Object.assign(ENVIOS, envios); }
 export function registrarEntradas(entradas) { Object.assign(ENTRADAS, entradas); }
+export function registrarCambios(cambios) { Object.assign(CAMBIOS, cambios); }
 // patron: "e/inicio" o RegExp sobre la ruta; vista: async ({ partes, query, path }) => html | { html, titulo, despues }
 export function registrarRuta({ patron, activo, titulo, vista }) { RUTAS.push({ patron, activo, titulo, vista }); }
 
@@ -143,11 +146,17 @@ document.addEventListener("click", (e) => {
 });
 document.addEventListener("submit", (e) => {
   e.preventDefault();
-  const f = e.target, fn = ENVIOS[f.id];
+  // Por id; los formularios que se repiten (uno por fila) van por data-envio.
+  const f = e.target, fn = ENVIOS[f.id] || ENVIOS[f.dataset.envio];
   if (fn) fn(f, f.querySelector("[type=submit]"), e);
 });
 document.addEventListener("input", (e) => {
   const fn = ENTRADAS[e.target.id] || ENTRADAS[e.target.dataset?.entrada];
+  if (fn) fn(e.target, e);
+});
+// Archivos elegidos (y otros campos que solo avisan al cambiar): por data-cambio.
+document.addEventListener("change", (e) => {
+  const fn = CAMBIOS[e.target.dataset?.cambio];
   if (fn) fn(e.target, e);
 });
 // Red de seguridad: un error sin atender no deja la pantalla colgada.
@@ -169,6 +178,7 @@ for (const m of MODULOS) {
   registrar(m.acciones || {});
   registrarEnvios(m.envios || {});
   registrarEntradas(m.entradas || {});
+  registrarCambios(m.cambios || {});
   for (const r of m.rutas || []) registrarRuta(r);
 }
 

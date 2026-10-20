@@ -130,3 +130,19 @@ test("jump_actualizar_perfil valida", async () => {
   await assert.rejects(como(db, X.E, "select jump_actualizar_perfil('  ', '')"), /negocio_invalido/);
   await assert.rejects(como(db, X.S, "select jump_actualizar_perfil('x', '')"), /sin_acceso/);
 });
+
+test("jump_conteos: el equipo recibe los conteos; un emprendedor, null", async () => {
+  await db.query("insert into jump_progreso (user_id, modulo_id) values ($1, $2), ($1, $3), ($4, $2) on conflict do nothing", [X.E.id, X.P1, X.B1, X.E2.id]);
+  await db.query("insert into jump_asistencia (clase_id, user_id, confirmado_en, entro_en) values ($1, $2, now(), now()), ($1, $3, now(), null) on conflict do nothing", [X.C1, X.E.id, X.E2.id]);
+  const aviso = (await db.query("select id from jump_avisos where clase_id = $1", [X.C1])).rows[0].id;
+  await db.query("insert into jump_avisos_vistos (aviso_id, user_id) values ($1, $2) on conflict do nothing", [aviso, X.E.id]);
+  const c = (await como(db, X.A, "select public.jump_conteos() c")).rows[0].c;
+  // Avance: solo módulos de mentorías publicadas (B1 es de un borrador).
+  assert.equal(c.progreso[X.E.id], 1);
+  assert.equal(c.progreso[X.E2.id], 1);
+  assert.deepEqual(c.asistencia[X.C1], { confirmados: 2, entraron: 1 });
+  assert.equal(c.avisos[aviso], 1);
+  assert.equal(c.mentorias[X.P], 2);
+  assert.equal((await como(db, X.E, "select public.jump_conteos() c")).rows[0].c, null);
+  await assert.rejects(como(db, "anon", "select public.jump_conteos()"), /permission denied/);
+});

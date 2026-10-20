@@ -2,6 +2,8 @@
 // Ninguna función devuelve errores crudos: todas lanzan ErrorJump { codigo, mensaje, campo? }.
 //   codigo: "credenciales" | "suspendida" | "sin_acceso" | "limite" | "red" | "sesion" | "prohibido" | "invalido" | "servidor"
 import { correoEmprendedor, correoEquipo, limpiarCedula } from "./cedula.js";
+import { aISO, fechaCorta, partes } from "./fechas.js";
+import { reducirFoto } from "./medios.js";
 
 // Debe coincidir con la fecha de jump/comunidad/privacidad.html y con api/jump-clave.js.
 export const VERSION_PRIVACIDAD = "2026-10-19";
@@ -239,4 +241,245 @@ export async function enlaceMaterial(material) {
   const nombre = material.nombre.toLowerCase().endsWith(ext.toLowerCase()) ? material.nombre : material.nombre + ext;
   const r = await q(sb.storage.from("jump-material").createSignedUrl(material.ruta, 120, verEnPestana ? {} : { download: nombre }));
   return r.data.signedUrl;
+}
+
+// ---------- equipo ----------
+
+export const adminApi = (accion, cuerpo = {}) => api("/api/jump-admin", { accion, ...cuerpo });
+
+// Las mismas reglas que las restricciones de la base (0005).
+export const RE_VIDEO = /^https:\/\/(www\.|m\.)?(youtube\.com|youtu\.be|vimeo\.com|player\.vimeo\.com)\//;
+export const RE_ZOOM = /^https:\/\/([a-z0-9-]+\.)?zoom\.us\//;
+export const MAX_MATERIAL = 20 * 1024 * 1024;
+export const TIPOS_MATERIAL = [
+  "application/pdf",
+  "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "image/jpeg", "image/png", "image/webp",
+];
+
+const ahoraISO = () => new Date().toISOString();
+
+// Todo lo que ve el equipo: el contenido sin filtrar por estado, las cuentas, los conteos y la cuenta de Zoom.
+export async function cargarAdmin() {
+  await iniciar();
+  const [m, men, mods, mats, cls, zm, avs, mie, bit, con, zoom] = await Promise.all([
+    yo(),
+    q(sb.from("jump_mentorias").select("*").order("creada_en", { ascending: false })),
+    q(sb.from("jump_modulos").select("*").order("orden")),
+    q(sb.from("jump_materiales").select("*").order("orden").order("creado_en")),
+    q(sb.from("jump_clases").select("*").order("inicia_en")),
+    q(sb.from("jump_clases_zoom").select("clase_id,meeting_id,join_url")),
+    q(sb.from("jump_avisos").select("*").order("creado_en", { ascending: false }).limit(100)),
+    q(sb.from("jump_miembros").select("*").order("creado_en", { ascending: false })),
+    q(sb.from("jump_bitacora").select("*").order("creado_en", { ascending: false }).limit(12)),
+    q(sb.rpc("jump_conteos")),
+    adminApi("zoom-estado").catch(() => ({ configurada: false, conectada: false, error: true })),
+  ]);
+  if (!m) throw new ErrorJump("sin_acceso");
+  if (m.estado !== "activa") throw new ErrorJump("suspendida");
+  if (m.rol !== "admin") throw new ErrorJump("sin_acceso");
+  const c = con.data || { progreso: {}, asistencia: {}, avisos: {}, mentorias: {} };
+  const mentorias = armarMentorias(men.data, mods.data, mats.data).map((x) => ({ ...x, vistos: c.mentorias[x.id] || 0 }));
+  const enlaces = new Map(zm.data.map((z) => [z.clase_id, z]));
+  const clases = cls.data.map(aClase).map((x) => ({
+    ...x, joinUrl: enlaces.get(x.id)?.join_url || "", meetingId: enlaces.get(x.id)?.meeting_id || null,
+    confirmados: c.asistencia[x.id]?.confirmados || 0, entraron: c.asistencia[x.id]?.entraron || 0,
+  }));
+  const avisos = avs.data.map(aAviso).map((a) => ({ ...a, vistos: c.avisos[a.id] || 0 }));
+  const miembros = mie.data.map(miembro).map((x) => ({ ...x, hechos: c.progreso[x.userId] || 0 }));
+  const bitacora = bit.data.map((b) => ({ id: b.id, actorId: b.actor_id, accion: b.accion, objetivo: b.objetivo, detalle: b.detalle, creadoEn: b.creado_en }));
+  return { yo: m, mentorias, clases, avisos, miembros, bitacora, zoom, cargadoEn: Date.now() };
+}
+
+// Clase de un módulo en vivo: el título del módulo si alcanza (la clase pide de 3 a 120 caracteres).
+const tituloClase = (mod, mentoria) => (mod.titulo.trim().length >= 3 ? mod.titulo.trim() : mentoria).slice(0, 120);
+
+// Guarda la mentoría del editor y sus módulos. Devuelve el id y deja en `E` los ids nuevos (para no duplicar al volver a guardar).
+//   E = { id?, titulo, descripcion, mentor, portadaRuta, modulos: [{ id?, titulo, tipo, videoUrl, duracion, descripcion, claseId?, fecha, hora, zoom }],
+//         modulosBorrados: [{ id, claseId, rutas }] }
+export async function guardarMentoria(E) {
+  await iniciar();
+  const titulo = E.titulo.trim() || "Mentoría sin título";
+  const fila = { titulo, descripcion: E.descripcion.trim(), mentor: E.mentor.trim() || null, portada: E.portadaRuta || null };
+  if (E.id) await q(sb.from("jump_mentorias").update(fila).eq("id", E.id));
+  else E.id = (await q(sb.from("jump_mentorias").insert(fila).select("id").single())).data.id;
+  const id = E.id;
+
+  // Lo que se quitó: primero sus clases (con sus avisos y asistencia), después los módulos.
+  const quitados = E.modulosBorrados || [];
+  const clasesFuera = quitados.map((x) => x.claseId).filter(Boolean);
+  if (clasesFuera.length) await q(sb.from("jump_clases").delete().in("id", clasesFuera));
+  const modsFuera = quitados.map((x) => x.id).filter(Boolean);
+  if (modsFuera.length) await q(sb.from("jump_modulos").delete().in("id", modsFuera));
+  // Sus archivos: las filas se van con el módulo; los objetos de Storage se borran aparte.
+  const rutasFuera = quitados.flatMap((x) => x.rutas || []);
+  if (rutasFuera.length) await sb.storage.from("jump-material").remove(rutasFuera).catch(() => {});
+  E.modulosBorrados = [];
+
+  for (const [i, mod] of E.modulos.entries()) {
+    const vivo = mod.tipo === "vivo";
+    if (vivo && mod.fecha && mod.hora) {
+      const clase = { titulo: tituloClase(mod, titulo), mentoria_id: id, inicia_en: aISO(mod.fecha, mod.hora), duracion_min: Number(mod.duracion) || 60 };
+      if (mod.claseId) await q(sb.from("jump_clases").update(clase).eq("id", mod.claseId));
+      else mod.claseId = (await q(sb.from("jump_clases").insert(clase).select("id").single())).data.id;
+    } else if (!vivo && mod.claseId) {
+      // Pasó de clase en vivo a video: la clase ya no existe.
+      await q(sb.from("jump_clases").delete().eq("id", mod.claseId));
+      mod.claseId = null;
+    }
+    if (vivo && mod.claseId) {
+      const z = (mod.zoom || "").trim();
+      if (z) await q(sb.from("jump_clases_zoom").upsert({ clase_id: mod.claseId, join_url: z, actualizado_en: ahoraISO() }, { onConflict: "clase_id" }));
+      else await q(sb.from("jump_clases_zoom").delete().eq("clase_id", mod.claseId));
+    }
+    const filaMod = {
+      mentoria_id: id, orden: i, titulo: mod.titulo.trim().slice(0, 120) || "Módulo sin título", tipo: mod.tipo,
+      video_url: vivo ? null : mod.videoUrl.trim() || null,
+      duracion_min: vivo ? Number(mod.duracion) || 60 : Number(mod.duracion) || null,
+      descripcion: mod.descripcion.trim(), clase_id: vivo ? mod.claseId || null : null,
+    };
+    if (mod.id) await q(sb.from("jump_modulos").update(filaMod).eq("id", mod.id));
+    else mod.id = (await q(sb.from("jump_modulos").insert(filaMod).select("id").single())).data.id;
+  }
+  return id;
+}
+
+export const textoInvitacion = (titulo, iniciaEn) =>
+  `Te invitamos a la clase en vivo “${titulo}”, el ${fechaCorta(iniciaEn).toLowerCase()} a las ${partes(iniciaEn).hora}. Entra con el botón “Entrar a Zoom” desde la Comunidad JUMP a la hora indicada.`;
+
+// Publica. Con `avisar`: un aviso de mentoría nueva (si no lo tenía) y una invitación por cada clase futura que no tenga.
+export async function publicarMentoria(id, { avisar = true } = {}) {
+  await iniciar();
+  const m = (await q(sb.from("jump_mentorias").select("titulo,publicada_en").eq("id", id).single())).data;
+  await q(sb.from("jump_mentorias").update({ estado: "publicada", publicada_en: m.publicada_en || ahoraISO() }).eq("id", id));
+  if (!avisar) return { avisoNuevo: false, invitaciones: 0 };
+  const ya = await q(sb.from("jump_avisos").select("id").eq("mentoria_id", id).eq("tipo", "mentoria").limit(1));
+  if (!ya.data.length) await q(sb.from("jump_avisos").insert({ tipo: "mentoria", texto: `Ya está disponible la mentoría “${m.titulo}”.`, mentoria_id: id }));
+  const futuras = (await q(sb.from("jump_clases").select("id,titulo,inicia_en").eq("mentoria_id", id).gt("inicia_en", ahoraISO()))).data;
+  let nuevas = [];
+  if (futuras.length) {
+    const invitadas = new Set((await q(sb.from("jump_avisos").select("clase_id").eq("tipo", "invitacion").in("clase_id", futuras.map((c) => c.id)))).data.map((a) => a.clase_id));
+    nuevas = futuras.filter((c) => !invitadas.has(c.id)).map((c) => ({ tipo: "invitacion", clase_id: c.id, texto: textoInvitacion(c.titulo, c.inicia_en) }));
+    if (nuevas.length) await q(sb.from("jump_avisos").insert(nuevas));
+  }
+  return { avisoNuevo: !ya.data.length, invitaciones: nuevas.length };
+}
+
+export async function pasarABorrador(id) {
+  await iniciar();
+  await q(sb.from("jump_mentorias").update({ estado: "borrador" }).eq("id", id));
+}
+
+// Borra la mentoría (la base se lleva sus módulos, material, clases, avisos y avance) y después sus archivos de Storage.
+export async function borrarMentoria(id) {
+  await iniciar();
+  const [mats, men] = await Promise.all([
+    q(sb.from("jump_materiales").select("ruta").eq("mentoria_id", id).eq("tipo", "archivo")),
+    q(sb.from("jump_mentorias").select("portada").eq("id", id).maybeSingle()),
+  ]);
+  await q(sb.from("jump_mentorias").delete().eq("id", id));
+  // Si esto falla, los archivos quedan huérfanos en Storage, pero nadie los puede ver (la política pide la mentoría).
+  const rutas = mats.data.map((x) => x.ruta).filter(Boolean);
+  if (rutas.length) await sb.storage.from("jump-material").remove(rutas).catch(() => {});
+  const portada = men.data?.portada;
+  if (portada && !portada.startsWith("assets/")) await sb.storage.from("jump-portadas").remove([portada]).catch(() => {});
+}
+
+// Portada: reducida y sin metadatos, en una carpeta propia del bucket público.
+export async function subirPortada(file) {
+  await iniciar();
+  let blob;
+  try { blob = await reducirFoto(file, 1600); } catch { throw new ErrorJump("invalido", "No pudimos leer esa foto. Prueba con otra (JPG, PNG o WebP)."); }
+  const ruta = `${crypto.randomUUID()}/portada.${blob.type === "image/webp" ? "webp" : "jpg"}`;
+  await q(sb.storage.from("jump-portadas").upload(ruta, blob, { contentType: blob.type, upsert: false }));
+  return ruta;
+}
+
+// "Guía de Precios (2026).PDF" → "guia-de-precios-2026.pdf" (para la ruta en Storage; el nombre original va en la fila).
+export function nombreSeguro(nombre) {
+  const s = String(nombre || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9._-]+/g, "-").replace(/-{2,}/g, "-").replace(/-(\.[a-z0-9]+)$/, "$1").replace(/^[-.]+|[-.]+$/g, "");
+  return (s.length > 80 ? s.slice(-80).replace(/^[-.]+/, "") : s) || "archivo";
+}
+
+export function errorMaterial(file) {
+  if (file.size > MAX_MATERIAL) return `${file.name} pesa más de 20 MB. Súbelo comprimido o compártelo como enlace.`;
+  if (!TIPOS_MATERIAL.includes(file.type)) return `${file.name}: solo se aceptan PDF, Word, Excel, PowerPoint o imágenes.`;
+  return "";
+}
+
+// Material de la mentoría (moduloId nulo) o de un módulo. La ruta empieza por el id de la mentoría (la usa la política de lectura).
+export async function subirMaterial(mentoriaId, moduloId, file, orden = 0) {
+  await iniciar();
+  const malo = errorMaterial(file);
+  if (malo) throw new ErrorJump("invalido", malo);
+  const ruta = `${mentoriaId}/${crypto.randomUUID()}-${nombreSeguro(file.name)}`;
+  await q(sb.storage.from("jump-material").upload(ruta, file, { contentType: file.type, upsert: false }));
+  try {
+    const r = await q(sb.from("jump_materiales").insert({
+      mentoria_id: mentoriaId, modulo_id: moduloId || null, nombre: file.name.trim().slice(0, 160) || "Archivo", tipo: "archivo",
+      ruta, bytes: file.size, mime: file.type, orden,
+    }).select("*").single());
+    return aMaterial(r.data);
+  } catch (e) {
+    await sb.storage.from("jump-material").remove([ruta]).catch(() => {});
+    throw e;
+  }
+}
+
+export async function agregarEnlace(mentoriaId, moduloId, url, orden = 0) {
+  await iniciar();
+  let nombre = url;
+  try { const u = new URL(url); nombre = (u.hostname.replace(/^www\./, "") + u.pathname.replace(/\/$/, "")).slice(0, 160); } catch { /* queda la URL */ }
+  const r = await q(sb.from("jump_materiales").insert({ mentoria_id: mentoriaId, modulo_id: moduloId || null, nombre, tipo: "enlace", url, orden }).select("*").single());
+  return aMaterial(r.data);
+}
+
+export async function quitarMaterial(material) {
+  await iniciar();
+  await q(sb.from("jump_materiales").delete().eq("id", material.id));
+  if (material.ruta) await sb.storage.from("jump-material").remove([material.ruta]).catch(() => {});
+}
+
+export const crearReunionZoom = (claseId) => adminApi("zoom-reunion", { claseId });
+
+export async function guardarZoomManual(claseId, url) {
+  await iniciar();
+  await q(sb.from("jump_clases_zoom").upsert({ clase_id: claseId, join_url: url, meeting_id: null, passcode: null, actualizado_en: ahoraISO() }, { onConflict: "clase_id" }));
+}
+
+// Clase suelta (o de una mentoría) con su invitación. zoom: "crear" | "manual" | "despues".
+// Si la reunión de Zoom no se pudo crear, la clase igual queda programada: el error lleva { clase }.
+export async function programarClase({ titulo, mentoriaId, fecha, hora, duracionMin, mensaje, zoom, enlace }) {
+  await iniciar();
+  const r = await q(sb.from("jump_clases").insert({
+    titulo: titulo.trim(), mentoria_id: mentoriaId || null, inicia_en: aISO(fecha, hora), duracion_min: Number(duracionMin) || 60, mensaje: mensaje.trim() || null,
+  }).select("*").single());
+  const clase = aClase(r.data);
+  if (zoom === "manual" && enlace) await guardarZoomManual(clase.id, enlace);
+  await q(sb.from("jump_avisos").insert({ tipo: "invitacion", clase_id: clase.id, texto: mensaje.trim() || textoInvitacion(clase.titulo, clase.iniciaEn) }));
+  if (zoom === "crear") {
+    try { await crearReunionZoom(clase.id); } catch (e) { e.clase = clase; throw e; }
+  }
+  return clase;
+}
+
+export async function guardarGrabacion(claseId, url) {
+  await iniciar();
+  await q(sb.from("jump_clases").update({ grabacion_url: url }).eq("id", claseId));
+}
+
+// Un recordatorio es otra invitación a la misma clase: sale arriba en Avisos y vuelve a contar como nuevo.
+export async function reenviarInvitacion(clase) {
+  await iniciar();
+  await q(sb.from("jump_avisos").insert({ tipo: "invitacion", clase_id: clase.id,
+    texto: `Recordatorio: la clase en vivo “${clase.titulo}” es el ${fechaCorta(clase.iniciaEn).toLowerCase()} a las ${partes(clase.iniciaEn).hora}. Confirma tu asistencia desde Clases en vivo.` }));
+}
+
+export async function publicarAviso(texto) {
+  await iniciar();
+  const r = await q(sb.from("jump_avisos").insert({ tipo: "aviso", texto: texto.trim() }).select("*").single());
+  return aAviso(r.data);
 }

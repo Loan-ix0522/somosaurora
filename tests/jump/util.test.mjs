@@ -103,3 +103,15 @@ test("mismoOrigen y json", async () => {
   assert.equal(res.headers.get("cache-control"), "no-store");
   assert.deepEqual(await res.json(), { ok: true });
 });
+
+test("nombreSeguro y errorMaterial (subidas del equipo)", async () => {
+  const { nombreSeguro, errorMaterial } = await import("../../jump/comunidad/js/datos.js");
+  assert.equal(nombreSeguro("Guía precios.pdf"), "guia-precios.pdf");
+  assert.equal(nombreSeguro("Guía de Precios (2026).PDF"), "guia-de-precios-2026.pdf");
+  assert.equal(nombreSeguro("../../etc/passwd"), "etc-passwd");
+  assert.equal(nombreSeguro("¿¿??"), "archivo");
+  assert.match(nombreSeguro("a".repeat(200) + ".pdf"), /^a{76}\.pdf$/);
+  assert.equal(errorMaterial({ name: "x.pdf", size: 1024, type: "application/pdf" }), "");
+  assert.match(errorMaterial({ name: "x.pdf", size: 21 * 1024 * 1024, type: "application/pdf" }), /20 MB/);
+  assert.match(errorMaterial({ name: "x.exe", size: 10, type: "application/x-msdownload" }), /solo se aceptan/);
+});

@@ -515,10 +515,34 @@ returns uuid language sql immutable set search_path = public as $$
               then split_part(name, '/', 1)::uuid end;
 $$;
 
+-- Conteos del panel del equipo en una sola llamada (la API corta las respuestas en 1000 filas).
+-- Avance por persona (solo módulos de mentorías publicadas), asistencia por clase, vistos por aviso
+-- y módulos vistos por mentoría. A quien no es del equipo le devuelve null.
+create or replace function public.jump_conteos()
+returns json language sql stable security definer set search_path = public as $$
+  select case when not public.jump_es_admin() then null else json_build_object(
+    'progreso', coalesce((select json_object_agg(t.user_id, t.n) from (
+        select p.user_id, count(*)::int n
+          from public.jump_progreso p
+          join public.jump_modulos mo on mo.id = p.modulo_id
+          join public.jump_mentorias me on me.id = mo.mentoria_id and me.estado = 'publicada'
+         group by p.user_id) t), '{}'::json),
+    'asistencia', coalesce((select json_object_agg(t.clase_id, json_build_object('confirmados', t.c, 'entraron', t.e)) from (
+        select clase_id, count(confirmado_en)::int c, count(entro_en)::int e
+          from public.jump_asistencia group by clase_id) t), '{}'::json),
+    'avisos', coalesce((select json_object_agg(t.aviso_id, t.n) from (
+        select aviso_id, count(*)::int n from public.jump_avisos_vistos group by aviso_id) t), '{}'::json),
+    'mentorias', coalesce((select json_object_agg(t.mentoria_id, t.n) from (
+        select mo.mentoria_id, count(*)::int n
+          from public.jump_progreso p join public.jump_modulos mo on mo.id = p.modulo_id
+         group by mo.mentoria_id) t), '{}'::json)
+  ) end;
+$$;
+
 do $$
 declare f text;
 begin
-  foreach f in array array['public.jump_directorio()', 'public.jump_storage_mentoria(text)'] loop
+  foreach f in array array['public.jump_directorio()', 'public.jump_storage_mentoria(text)', 'public.jump_conteos()'] loop
     execute format('revoke all on function %s from public, anon', f);
     execute format('grant execute on function %s to authenticated', f);
   end loop;

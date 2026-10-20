@@ -8,6 +8,7 @@ Clasificación de riesgo LOAN-IX: **HIGH** (formulario público + panel admin + 
 - Consentimiento explícito por envío: `consentimiento = true` + `consent_version` (versión de la política aceptada) + `consent_at` (hora del servidor). Migración 0004. Los envíos anteriores quedan con esos dos campos vacíos.
 - Las fotos se reducen en el navegador antes de enviarse (≤ 1600 px, JPEG), lo que además quita los datos de ubicación (EXIF) de los celulares.
 - Retención: 30 días, automática (`/api/purge`, ver README), salvo opiniones marcadas "En gestión".
+- **Contador de visitas (migración 0006):** cada página pública abierta guarda página, hora, **IP**, ciudad y país aproximados (cabeceras de Vercel), tipo de aparato, dominio de procedencia y un código anónimo del navegador (`localStorage`). La IP es dato personal: `/api/purge` la borra a los 30 días (`borrar_ip_visitas()`); el resto queda como estadística. Declarado en `politica-datos.html` (punto 2, 3, 4 y 6; base legal: interés legítimo).
 
 ## Autenticación y autorización
 - **Admin:** Supabase Auth (email+password). **Signup público deshabilitado** (confirmado por el dueño) — admins creados a mano. Solo los correos de `public.admins` pasan `is_admin()` (migración 0002).
@@ -42,6 +43,13 @@ Capas (ninguna es infalible; juntas suben mucho el costo):
 2. **Bloqueo por User-Agent** en `vercel.json` → `/api/blocked` (403): rastreadores de IA (GPTBot, ClaudeBot, PerplexityBot, CCBot, Bytespider, FirecrawlAgent…), bibliotecas HTTP genéricas (curl, python-requests, Go-http-client, axios…), navegadores sin interfaz y peticiones sin User-Agent. Googlebot/Bing y las vistas previas de WhatsApp/Facebook siguen permitidos. `/api/purge` está exento (lo protege su secreto).
 3. **Vercel Firewall (panel de Vercel, lo configura el dueño)**: Bot Protection, AI Bots y una regla de rate limit sobre `/api/submit`. Un bot que falsifique su User-Agent solo se frena aquí.
 4. Lo que se publica en la web es público por diseño; lo privado (opiniones, nombres, celulares, fotos) nunca sale del panel autenticado.
+
+## Contador de visitas (`/api/track`)
+- Solo `POST` desde el mismo sitio (Origin o `Sec-Fetch-Site: same-origin`), cuerpo ≤ 2 KB con solo `path`, `vid` y `ref`; responde 204 siempre y nunca devuelve datos.
+- Escribe con la service role a través de `registrar_visita()` (`security definer`, ejecutable solo por `service_role`), que limpia cada campo y no cuenta recargas (mismo código + misma página en 10 s).
+- `visitas` tiene RLS: lectura solo para `is_admin()`; `anon` y `authenticated` sin escritura. `estadisticas_visitas()` corre con los permisos de quien llama (otra cuenta ve ceros).
+- No cuenta `/admin`, ni User-Agents de bots (además del bloqueo de `vercel.json`).
+- Riesgo aceptado: alguien con un navegador real puede inflar el conteo cambiando el código anónimo; es una estadística, no un control. Si pasa, poner un límite de tasa a `/api/track` en el Firewall de Vercel.
 
 ## Storage
 - Bucket `evidencias` **privado**. Subidas solo vía service role. Las fotos no se exponen públicamente; el admin las abre con URL firmada de 120 s.

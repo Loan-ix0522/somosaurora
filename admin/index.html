@@ -143,6 +143,18 @@
   .dchip.all{background:transparent;border-color:transparent;color:var(--muted);font-weight:600}
   body.has-dock .wrap{padding-bottom:96px}
   #toast{z-index:9000}
+  /* visitas a la web */
+  .vis-top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  .vis-top .sub{max-width:760px;margin-bottom:0}
+  .vis-body{margin-top:22px}
+  .vis-grid{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:28px}
+  .vis-nota{font-size:13.5px;margin:0 0 14px}
+  .vis-h{margin-top:30px}
+  table.xl.xl-vis{min-width:980px;table-layout:auto}
+  .xl-vis th,.xl-vis td{height:46px}
+  .vis-mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13px}
+  .vis-pager{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:12px;margin:12px 0 0;font-size:13px;color:var(--muted)}
+  @media(max-width:700px){.vis-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.vis-grid .stat{padding:14px 16px}.vis-grid .stat .n{font-size:24px}}
   @media (prefers-reduced-motion:no-preference){.win{animation:winIn .18s cubic-bezier(.16,1,.3,1)}}
   @keyframes winIn{from{opacity:0;transform:scale(.97) translateY(6px)}to{opacity:1;transform:none}}
   @media(max-width:700px){.wrap{padding:18px 14px 28px}.bar .wrap{padding:12px 14px}.panel{padding:20px 16px}.kv-grid{grid-template-columns:1fr}}
@@ -247,6 +259,18 @@
       <div class="field" style="margin:22px 0 0"><label for="resumen" style="font-weight:700;font-size:13px">Resumen del informe (opcional)</label><textarea id="resumen" rows="3" placeholder="Ej.: Esta semana predominaron los temas de basura y alumbrado…"></textarea></div>
     </div>
 
+    <!-- VISITAS A LA WEB -->
+    <div class="panel" id="visitasPanel">
+      <div class="vis-top">
+        <div>
+          <h2>Visitas a la web</h2>
+          <p class="sub">Cada vez que alguien abre una página pública de la web, con la hora de Ecuador. Lugar e IP son aproximados (los da la conexión). La IP se borra sola a los 30 días; la visita queda. Este panel no se cuenta.</p>
+        </div>
+        <button type="button" class="btn blue" data-vis="recargar">Recargar</button>
+      </div>
+      <div class="vis-body"><p class="muted">Cargando visitas…</p></div>
+    </div>
+
     <!-- ZONA PELIGRO -->
     <div class="panel">
       <h2>Archivar y limpiar</h2>
@@ -272,6 +296,7 @@
 <div id="dock" class="dock" hidden aria-label="Ventanas abiertas"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js" integrity="sha384-GFr3yTh5lJznCbZfpTtXnwboFsxqtTQoeTZCRHhE0579KrRmlCzen5AA8ohaB5ug" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="/admin/panel-visitas.js"></script>
 <script>
 (function(){
   const $ = (s)=>document.querySelector(s);
@@ -379,6 +404,7 @@
     loadRows();
     renderPicks();
     loadLive(); loadRetention();
+    if(window.AuroraVisitas) AuroraVisitas.montar(db, $('#visitasPanel'));
   }
 
   // ---- datos ----

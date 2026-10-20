@@ -38,12 +38,14 @@ El diseño visual ya está decidido y no se rediseña: es el del mockup (contrat
 
 ## 5. Restricciones
 
-- **Supabase**: el mismo proyecto de La Aurora Escucha (`jdterctcniotbipgwcdv`), decisión del usuario. El dueño aplica las migraciones en el SQL Editor; yo las escribo. El MCP de Supabase de esta sesión apunta a otra cuenta (inmoai) y **no se toca**.
-- **Convivencia con La Aurora Escucha**: sus políticas (migración 0002) exigen `public.is_admin()` (correo en la tabla `admins`); los usuarios de JUMP no están en `admins`, así que no ven nada de La Aurora. Las tablas de JUMP llevan prefijo `jump_` en el esquema `public` (no hace falta exponer esquemas nuevos). Hasta hoy el proyecto no tenía usuarios autenticados que no fueran admins; JUMP los introduce, así que la migración:
-  1. **Se niega a correr** (lanza un error claro) si alguna política de `submissions`, `weekly_reports`, `featured_opinions` o del bucket `evidencias` para `authenticated` sigue con `using (true)` de la 0001, es decir, si la 0002 no se aplicó.
-  2. Endurece `public.is_admin()` con una sola condición extra: `and not exists (select 1 from public.jump_miembros where user_id = auth.uid())`. Una cuenta de JUMP nunca puede ser admin de La Aurora, aunque llegara a tener un correo de `admins`. Es el único cambio a algo existente.
-  3. Los roles salen solo de `jump_miembros`; nunca de `user_metadata` (el usuario puede editar su propio metadata).
-- **Vercel**: el mismo proyecto de Vercel (despliega desde el fork `Loan-ix0522/somosaurora:main`). Funciones en `/api` con runtime Edge, como las actuales. Variables existentes con nombres no estándar (`ProjectURL`, `anonpublic`, `service_role`): el código nuevo usa los mismos *fallbacks*.
+- **Supabase**: proyecto de Supabase **propio de JUMP**, aparte del de La Aurora Escucha pero en la misma organización. Decisión del usuario del 2026-10-20 (antes se había decidido compartir el proyecto de La Aurora, `jdterctcniotbipgwcdv`). El dueño crea el proyecto y aplica la migración en el SQL Editor; yo la escribo. El MCP de Supabase de esta sesión apunta a otra cuenta (inmoai) y **no se toca**.
+- **Aislamiento de La Aurora Escucha**: al ser bases distintas no comparten tablas, cuentas ni llaves, y la migración de JUMP no toca nada de La Aurora (ni `is_admin()` ni sus políticas) ni exige que estén aplicadas. Para que no se mezclen por descuido:
+  1. Variables propias `JUMP_SUPABASE_URL`, `JUMP_SUPABASE_ANON_KEY` y `JUMP_SUPABASE_SERVICE_ROLE_KEY`, **sin respaldo** en las de La Aurora: si falta una, JUMP se niega a funcionar en vez de caer en la base de La Aurora.
+  2. El navegador lee su configuración de `/api/jump-config` (nunca de `/api/config`, que es del panel de La Aurora).
+  3. La CSP de `/jump` solo nombra la base de JUMP (`connect-src` e `img-src`) y la de `/admin` solo la de La Aurora.
+  4. La migración vive en `supabase/jump/`; `supabase/migrations/` es solo de La Aurora.
+  5. En el proyecto de JUMP se apaga el registro público de Auth (las cuentas las crea el equipo). Las tablas llevan prefijo `jump_` en el esquema `public`. Los roles salen solo de `jump_miembros`; nunca de `user_metadata` (el usuario puede editar su propio metadata).
+- **Vercel**: el mismo proyecto de Vercel (despliega desde el fork `Loan-ix0522/somosaurora:main`). Funciones en `/api` con runtime Edge, como las actuales. Las variables de La Aurora (con nombres no estándar: `ProjectURL`, `anonpublic`, `service_role`) no se tocan ni se reutilizan.
 - **CSP**: cada página nueva entra en `scripts/csp.mjs` y `vercel.json`. Se recalcula con `node scripts/csp.mjs` tras editar cualquier script en línea.
 - **Copia**: español de Ecuador; "comunidad"/"sector", nunca "barrio". Sin testimonios, cifras ni patrocinadores inventados. Lenguaje que no presupone género ("Cuenta activa", "emprendedor(a)").
 - **Logo**: vectores exactos `#jump-letters` y `#fig-glyph`; no se alteran.
@@ -84,7 +86,7 @@ La cédula y el WhatsApp son datos personales (LOPDP). En el primer ingreso, jun
 - El registro público de Supabase sigue **deshabilitado** (ya lo está).
 - Un usuario de JUMP que intente entrar al `/admin/` de La Aurora Escucha ve el panel vacío (no está en `admins`). Un admin de La Aurora que intente entrar a JUMP ve "Esta cuenta no tiene acceso a la Comunidad JUMP".
 
-## 8. Modelo de datos (migración `0005_comunidad_jump.sql`)
+## 8. Modelo de datos (migración `supabase/jump/0001_comunidad_jump.sql`)
 
 Todas con `es_ejemplo boolean not null default false` donde aplique (para el borrado de ejemplos).
 
@@ -163,18 +165,18 @@ Las tablas y políticas de La Aurora Escucha no cambian.
 
 ## 14. Pruebas y verificación (riesgo ALTO)
 
-- **Permisos**: suite automática que aplica la migración en un Postgres local (PGlite, Postgres en WebAssembly vía npm; **el usuario dio permiso** para instalarlo en una carpeta de pruebas fuera del sitio) con un esquema `auth`/`storage` mínimo simulado, y prueba cada caso de abuso: emprendedor leyendo borradores, cédulas ajenas, `jump_clases_zoom`, datos de La Aurora; suspendido con sesión abierta; marca `debe_cambiar_clave`; muro ajeno; admin suspendido.
+- **Permisos**: suite automática que aplica la migración en un Postgres local (PGlite, Postgres en WebAssembly vía npm; **el usuario dio permiso** para instalarlo en una carpeta de pruebas fuera del sitio) con un esquema `auth`/`storage` mínimo simulado, y prueba cada caso de abuso: emprendedor leyendo borradores, cédulas ajenas, `jump_clases_zoom`, tablas de La Aurora (no existen en esta base); suspendido con sesión abierta; marca `debe_cambiar_clave`; muro ajeno; admin suspendido.
 - **API**: pruebas de las funciones Edge con `fetch` simulado (sin JWT, JWT de emprendedor, JWT de admin suspendido → 401/403; validación de cédula; `state` de Zoom vencido o alterado; cifrado de tokens ida y vuelta).
 - **Interfaz**: Chrome sin cabeza (CDP) en 1440 y 390 px contra un Supabase simulado, con los mismos flujos que ya se probaron en el mockup + muro + ajustes.
 - **Revisión de seguridad**: pasada dedicada sobre el diff (autorización, RLS, secretos, OAuth) antes de entregar; la evidencia de cada caso de abuso queda en `docs/loanix/SECURITY.md`.
-- **Casos de abuso explícitos**: emprendedor que cambia su `user_metadata` para hacerse admin; que intenta cambiar su correo a uno de `admins`; que llama a `jump_entrar_clase` fuera de la ventana; que sube al bucket del muro en la carpeta de otro; admin de La Aurora entrando a JUMP y miembro de JUMP entrando al panel de La Aurora (`is_admin()` debe dar `false`).
-- **En producción** (lo hace el dueño, guiado): revisar en Authentication → Settings que el registro siga apagado y "Confirm email" encendido; aplicar migración; crear primer admin; cargar ejemplos; probar ingreso de emprendedor con "Clave nueva"; conectar Zoom.
+- **Casos de abuso explícitos**: emprendedor que cambia su `user_metadata` para hacerse admin; que intenta cambiar su correo a uno de `admins`; que llama a `jump_entrar_clase` fuera de la ventana; que sube al bucket del muro en la carpeta de otro; sin las variables `JUMP_SUPABASE_*` el servidor no llama a ninguna base (ni a la de La Aurora) y `/api/jump-config` responde 503; la CSP de `/jump` no nombra la base de La Aurora ni la de `/admin` la de JUMP.
+- **En producción** (lo hace el dueño, guiado): crear el proyecto de Supabase de JUMP y apagar en Authentication el registro público (con "Confirm email" encendido); aplicar la migración en ese proyecto; crear primer admin; cargar ejemplos; probar ingreso de emprendedor con "Clave nueva"; conectar Zoom.
 
 ## 15. Entrega
 
-1. `supabase/migrations/0005_comunidad_jump.sql` (+ instrucciones para el SQL Editor y el `insert` del primer admin).
+1. `supabase/jump/0001_comunidad_jump.sql` (+ instrucciones para el SQL Editor del proyecto de JUMP y el `insert` del primer admin).
 2. `jump/comunidad/` (index.html, app.js, estilos), `api/jump-*.js`, cambios en `vercel.json` y `scripts/csp.mjs`.
-3. Variables nuevas en Vercel: `JUMP_SECRET` (32+ caracteres aleatorios), `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET`, `ZOOM_WEBHOOK_SECRET`, `JUMP_PUBLIC_URL`. Reusa `SUPABASE_URL`/`ProjectURL`, `SUPABASE_ANON_KEY`/`anonpublic`, `SUPABASE_SERVICE_ROLE_KEY`/`service_role`.
+3. Variables nuevas en Vercel: `JUMP_SECRET` (32+ caracteres aleatorios), `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET`, `ZOOM_WEBHOOK_SECRET`, `JUMP_PUBLIC_URL` y las tres del proyecto de Supabase de JUMP: `JUMP_SUPABASE_URL`, `JUMP_SUPABASE_ANON_KEY`, `JUMP_SUPABASE_SERVICE_ROLE_KEY`. No reusa las de La Aurora. El Project URL de JUMP también se escribe una vez en `scripts/csp.mjs` (`JUMP_SUPABASE_HOST`) y se corre `node scripts/csp.mjs`.
 4. Guía corta en español para el dueño: migración, primer admin, variables, crear la app de Zoom, apuntar el subdominio.
 5. PR al canónico + push al fork como siempre.
 
@@ -188,7 +190,7 @@ Las tablas y políticas de La Aurora Escucha no cambian.
 - El enlace de Zoom solo se entrega dentro de la ventana de la clase.
 - El directorio muestra a los demás emprendedores el nombre corto, no el completo.
 - Clave temporal de 8 dígitos que vence en 7 días.
-- `is_admin()` de La Aurora se endurece para excluir cuentas de JUMP, y la migración se niega a correr si falta la 0002.
+- Proyecto de Supabase propio de JUMP, en la misma organización que el de La Aurora (decisión del usuario del 2026-10-20; antes: compartir el de La Aurora con `is_admin()` endurecido). La migración no depende de nada de La Aurora.
 - Aviso de privacidad en el primer ingreso, con CONSALVA LAW S.A.S. como responsable (texto en borrador para que lo revise Josué).
 - Las personas del equipo se agregan en Ajustes → Equipo JUMP.
 

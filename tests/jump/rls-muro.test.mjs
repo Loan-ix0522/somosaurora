@@ -1,4 +1,4 @@
-// Permisos de la 0005 (parte 2): muro, Storage, Zoom, bitácora y directorio.
+// Permisos de la migración de JUMP (parte 2): muro, Storage, Zoom, bitácora y directorio.
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -149,8 +149,8 @@ test("E2 borra solo su comentario; E borra su post", async () => {
   assert.equal((await db.query("select count(*)::int n from jump_posts where id = $1", [id])).rows[0].n, 0);
 });
 
-test("la 0005 se puede volver a correr sin error", async () => {
-  await aplicarMigracion(db, "0005");
-  await aplicarMigracion(db, "0005");
+test("la migración de JUMP se puede volver a correr sin error", async () => {
+  await aplicarMigracion(db, "0001");
+  await aplicarMigracion(db, "0001");
   assert.equal(await n(X.E, "select 1 from jump_mentorias"), 1);
 });

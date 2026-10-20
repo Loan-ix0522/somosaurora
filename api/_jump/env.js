@@ -1,12 +1,14 @@
 // Variables de entorno de la Comunidad JUMP.
-// Acepta los nombres estándar y los que quedaron puestos en Vercel (ProjectURL, anonpublic, service_role).
+// JUMP tiene su propio proyecto de Supabase. Sus variables llevan el prefijo JUMP_ y NO hay respaldo en las de
+// La Aurora Escucha (SUPABASE_URL, ProjectURL…): si falta una, JUMP se niega a funcionar en vez de caer en la
+// base de La Aurora.
 
 export function supa() {
   const e = process.env;
   return {
-    url: (e.SUPABASE_URL || e.ProjectURL || "").replace(/\/+$/, ""),
-    anon: e.SUPABASE_ANON_KEY || e.anonpublic || "",
-    service: e.SUPABASE_SERVICE_ROLE_KEY || e.service_role || "",
+    url: (e.JUMP_SUPABASE_URL || "").replace(/\/+$/, ""),
+    anon: e.JUMP_SUPABASE_ANON_KEY || "",
+    service: e.JUMP_SUPABASE_SERVICE_ROLE_KEY || "",
   };
 }
 

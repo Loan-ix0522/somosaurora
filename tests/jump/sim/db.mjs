@@ -1,20 +1,22 @@
 // Postgres real (PGlite) con lo mínimo de Supabase, para probar RLS y funciones de las migraciones.
+// JUMP tiene su propio proyecto de Supabase: la base de pruebas es un proyecto vacío + las migraciones de supabase/jump/
+// (nada de La Aurora Escucha, que vive en supabase/migrations/ y en otro proyecto).
 import { readFileSync, readdirSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 
-const MIGRACIONES = new URL("../../../supabase/migrations/", import.meta.url);
+const MIGRACIONES = new URL("../../../supabase/jump/", import.meta.url);
 const migraciones = () => readdirSync(MIGRACIONES).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();
 
-// Aplica base.sql y las migraciones 0001… hasta `hasta` (inclusive).
-export async function crearBase({ hasta = "0005" } = {}) {
+// Aplica base.sql y todas las migraciones de JUMP, en orden.
+export async function crearBase() {
   const db = await PGlite.create({ extensions: { pgcrypto } });
   await db.exec(readFileSync(new URL("base.sql", import.meta.url), "utf8"));
-  for (const f of migraciones().filter((f) => f.slice(0, 4) <= hasta)) await aplicarMigracion(db, f.slice(0, 4));
+  for (const f of migraciones()) await aplicarMigracion(db, f.slice(0, 4));
   return db;
 }
 
-// Aplica una sola migración por su prefijo ("0005").
+// Aplica una sola migración por su prefijo ("0001").
 export async function aplicarMigracion(db, prefijo) {
   const f = migraciones().find((x) => x.startsWith(prefijo + "_"));
   if (!f) throw new Error(`No existe la migración ${prefijo}`);

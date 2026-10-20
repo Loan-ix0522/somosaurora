@@ -1,26 +1,23 @@
-// La base simulada reproduce lo que importa de Supabase (roles, auth.uid(), RLS) y aplica las migraciones reales.
+// La base simulada reproduce lo que importa de Supabase (roles, auth.uid(), RLS) y aplica la migración real de JUMP.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { crearBase, como, nuevoUsuario } from "./sim/db.mjs";
 
-test("0001-0004 aplican y is_admin() es falso para anon y para un usuario cualquiera", async () => {
-  const db = await crearBase({ hasta: "0004" });
-  assert.equal((await como(db, "anon", "select public.is_admin() a")).rows[0].a, false);
-  const id = await nuevoUsuario(db, { email: "x@y.com", password: "p" });
-  assert.equal((await como(db, { id, email: "x@y.com" }, "select public.is_admin() a")).rows[0].a, false);
+test("la migración de JUMP aplica sobre un proyecto de Supabase vacío", async () => {
+  const db = await crearBase();
+  const { rows } = await db.query("select to_regclass('public.jump_miembros') t, to_regclass('storage.objects') s");
+  assert.notEqual(rows[0].t, null);
+  assert.notEqual(rows[0].s, null);
 });
 
-test("un correo de admins es admin", async () => {
-  const db = await crearBase({ hasta: "0004" });
-  const email = "somosaurora.daule@gmail.com"; // lo precarga la 0002
-  const id = await nuevoUsuario(db, { email, password: "p" });
-  assert.equal((await como(db, { id, email }, "select public.is_admin() a")).rows[0].a, true);
-});
-
-test("RLS de La Aurora: un usuario cualquiera no lee submissions", async () => {
-  const db = await crearBase({ hasta: "0004" });
-  await db.query("insert into public.submissions (tipo, tema, detalle) values ('Otro tema', 'x', 'hola')");
+test("quien no es miembro de JUMP no lee nada de JUMP, ni con sesión iniciada", async () => {
+  const db = await crearBase();
   const id = await nuevoUsuario(db, { email: "x@y.com", password: "p" });
-  const { rows } = await como(db, { id, email: "x@y.com" }, "select count(*)::int n from public.submissions");
+  const { rows } = await como(db, { id, email: "x@y.com" }, "select count(*)::int n from public.jump_miembros");
   assert.equal(rows[0].n, 0);
+});
+
+test("anon no puede leer jump_miembros", async () => {
+  const db = await crearBase();
+  await assert.rejects(como(db, "anon", "select 1 from public.jump_miembros"), /permission denied/);
 });

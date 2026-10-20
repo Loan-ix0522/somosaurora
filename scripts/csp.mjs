@@ -25,7 +25,10 @@ const ADMIN_PAGES = ["admin/index.html"];
 const JUMP_PAGES = ["jump/comunidad/index.html", "jump/comunidad/privacidad.html"];
 // Videos de las mentorías: solo los reproductores sin cookies de YouTube y el de Vimeo.
 const VIDEO_FRAMES = "https://www.youtube-nocookie.com https://player.vimeo.com";
-const SUPABASE_HOST = "https://jdterctcniotbipgwcdv.supabase.co";
+const SUPABASE_HOST = "https://jdterctcniotbipgwcdv.supabase.co"; // La Aurora Escucha (solo el panel /admin)
+// Proyecto de Supabase PROPIO de JUMP. ANTES DE LANZAR: poner aquí su "Project URL" (Settings → API) y correr este script.
+// Mientras diga ".invalid" (un dominio que por norma nunca resuelve), la Comunidad JUMP no puede hablar con ninguna base.
+const JUMP_SUPABASE_HOST = "https://jump-supabase-pendiente.invalid";
 const SUPABASE_JS = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js";
 
 function inlineHashes(files) {
@@ -51,7 +54,7 @@ const common = [
 const publicCsp = [...common, `script-src 'self' ${inlineHashes(PUBLIC_PAGES).join(" ")}`, "img-src 'self' data:", "connect-src 'self'"].join("; ");
 const adminCsp = [...common, `script-src 'self' ${inlineHashes(ADMIN_PAGES).join(" ")} ${SUPABASE_JS}`, `img-src 'self' data: ${SUPABASE_HOST}`, `connect-src 'self' ${SUPABASE_HOST}`].join("; ");
 
-const jumpCsp = [...common, `script-src 'self' ${inlineHashes(JUMP_PAGES).join(" ")} ${SUPABASE_JS}`.replace(/ {2,}/g, " "), `img-src 'self' data: blob: ${SUPABASE_HOST}`, `connect-src 'self' ${SUPABASE_HOST}`, `frame-src ${VIDEO_FRAMES}`, "media-src 'none'"].join("; ");
+const jumpCsp = [...common, `script-src 'self' ${inlineHashes(JUMP_PAGES).join(" ")} ${SUPABASE_JS}`.replace(/ {2,}/g, " "), `img-src 'self' data: blob: ${JUMP_SUPABASE_HOST}`, `connect-src 'self' ${JUMP_SUPABASE_HOST}`, `frame-src ${VIDEO_FRAMES}`, "media-src 'none'"].join("; ");
 const cspDe = (source) => (source.startsWith("/admin") ? adminCsp : source.startsWith("/jump") ? jumpCsp : publicCsp);
 
 const cfg = JSON.parse(read("vercel.json"));

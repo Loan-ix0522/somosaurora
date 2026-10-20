@@ -1,7 +1,7 @@
-// Permisos de la 0005 (parte 1): quién ve qué en miembros, mentorías, módulos, clases, Zoom y avisos.
+// Permisos de la migración de JUMP (parte 1): quién ve qué en miembros, mentorías, módulos, clases, Zoom y avisos.
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { crearBase, aplicarMigracion, como } from "./sim/db.mjs";
+import { crearBase, como } from "./sim/db.mjs";
 import { crearEscenario } from "./sim/escenario.mjs";
 
 let db, X;
@@ -10,11 +10,6 @@ before(async () => { db = await crearBase(); X = await crearEscenario(db); });
 const n = async (quien, sql, params) => (await como(db, quien, `select count(*)::int n from (${sql}) t`, params)).rows[0].n;
 // Lectura que puede fallar por permiso o no devolver filas: ambas cuentan como "no ve nada".
 const nOCero = (quien, sql, params) => n(quien, sql, params).catch((e) => (/permission denied/.test(e.message) ? 0 : Promise.reject(e)));
-
-test("precondición: sin 0002 la 0005 no corre", async () => {
-  const vieja = await crearBase({ hasta: "0001" });
-  await assert.rejects(aplicarMigracion(vieja, "0005"), /Falta aplicar 0002/);
-});
 
 test("E ve P y sus módulos, no ve B ni sus módulos", async () => {
   assert.equal(await n(X.E, "select 1 from jump_mentorias where id = $1", [X.P]), 1);
@@ -103,23 +98,6 @@ test("A escribe contenido; un admin suspendido no", async () => {
   } finally {
     await db.query("update jump_miembros set estado = 'activa' where user_id = $1", [X.A.id]);
   }
-});
-
-test("is_admin() es falso para un miembro de JUMP aunque su correo esté en admins", async () => {
-  await db.query("insert into public.admins (email) values ($1)", [X.E.email]);
-  assert.equal((await como(db, X.E, "select public.is_admin() a")).rows[0].a, false);
-});
-
-test("is_admin() sigue verdadero para el admin real de La Aurora", async () => {
-  const email = "somosaurora.daule@gmail.com";
-  const id = (await db.query("insert into auth.users (email) values ($1) returning id", [email])).rows[0].id;
-  assert.equal((await como(db, { id, email }, "select public.is_admin() a")).rows[0].a, true);
-});
-
-test("E no lee submissions ni admins", async () => {
-  await db.query("insert into public.submissions (tipo, tema, detalle) values ('Otro tema', 'x', 'privado')");
-  assert.equal(await nOCero(X.E, "select 1 from public.submissions"), 0);
-  assert.equal(await nOCero(X.E, "select 1 from public.admins"), 0);
 });
 
 test("jump_actualizar_perfil valida", async () => {

@@ -23,7 +23,7 @@ let sb = null;
 export async function iniciar() {
   if (sb) return sb;
   let cfg;
-  try { cfg = await (await fetch("/api/config", { cache: "no-store" })).json(); } catch { throw new ErrorJump("red"); }
+  try { cfg = await (await fetch("/api/jump-config", { cache: "no-store" })).json(); } catch { throw new ErrorJump("red"); }
   if (!cfg || !cfg.url || !cfg.anonKey || !window.supabase) throw new ErrorJump("red");
   // Sesión propia de JUMP: no se mezcla con la del panel de La Aurora Escucha (otra clave de localStorage).
   sb = window.supabase.createClient(cfg.url, cfg.anonKey, {
@@ -248,7 +248,7 @@ export async function enlaceMaterial(material) {
 
 export const adminApi = (accion, cuerpo = {}) => api("/api/jump-admin", { accion, ...cuerpo });
 
-// Las mismas reglas que las restricciones de la base (0005).
+// Las mismas reglas que las restricciones de la base (migración de JUMP).
 export const RE_VIDEO = /^https:\/\/(www\.|m\.)?(youtube\.com|youtu\.be|vimeo\.com|player\.vimeo\.com)\//;
 export const RE_ZOOM = /^https:\/\/([a-z0-9-]+\.)?zoom\.us\//;
 export const MAX_MATERIAL = 20 * 1024 * 1024;
@@ -492,7 +492,7 @@ export const MSG_MURO = {
   limite_comentarios: "Llegaste al límite de 50 comentarios por día.",
   foto_ilegible: "Esa foto no se pudo leer. Prueba con otra o toma una captura de pantalla.",
 };
-// Los límites diarios los pone la base (triggers de la 0005) con raise exception.
+// Los límites diarios los pone la base (triggers de la migración de JUMP) con raise exception.
 async function qMuro(consulta) {
   let r;
   try { r = await consulta; } catch { throw new ErrorJump("red"); }

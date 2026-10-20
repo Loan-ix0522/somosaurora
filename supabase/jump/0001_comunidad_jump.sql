@@ -1,31 +1,24 @@
 -- ============================================================
--- Comunidad JUMP — 0005
--- Plataforma del programa JUMP (emprendedores de La Aurora) en el mismo proyecto de La Aurora Escucha.
+-- Comunidad JUMP — migración 0001
+-- Plataforma del programa JUMP (emprendedores de La Aurora).
 --
--- CÓMO APLICARLA: pegar TODO este archivo en Supabase → SQL Editor → Run.
+-- PROYECTO PROPIO: va en el proyecto de Supabase de JUMP (en la misma organización que el de
+-- La Aurora Escucha, pero aparte). NO la apliques en el proyecto de La Aurora Escucha: no comparten
+-- base, cuentas ni llaves, y esta migración no toca nada de La Aurora Escucha.
+--
+-- CÓMO APLICARLA: en el proyecto de JUMP, pegar TODO este archivo en Supabase → SQL Editor → Run.
 -- Se puede volver a correr sin problema (no duplica nada).
 --
+-- Antes de usar la plataforma: Authentication → Sign In / Providers → apaga "Allow new users to sign up"
+-- (las cuentas las crea el equipo desde su panel).
+--
 -- Qué hace:
---   0. Se niega a correr si falta la 0002 (las políticas de La Aurora Escucha deben exigir is_admin()).
 --   1. Tablas jump_* con RLS: nadie ve nada salvo los miembros activos de JUMP, y cada quien según su rol.
---   2. Endurece public.is_admin(): una cuenta de JUMP nunca es admin de La Aurora Escucha.
---   3. Buckets de Storage para portadas, material y fotos del muro.
---   Al final: plantilla para crear el primer admin de JUMP.
+--   2. Funciones de permisos.
+--   3-7. RLS, muro de la comunidad, Zoom y bitácora, directorio.
+--   8. Buckets de Storage para portadas, material y fotos del muro.
+--   9. Al final: plantilla para crear el primer admin de JUMP.
 -- ============================================================
-
--- ============================================================
--- 0. PRECONDICIÓN: la 0002 tiene que estar aplicada
--- ============================================================
-do $$
-declare faltan text;
-begin
-  select string_agg(n, ', ') into faltan
-  from unnest(array['submissions_admin_all', 'weekly_reports_admin_write', 'featured_admin_write', 'evidencias_admin_all']) n
-  where not exists (select 1 from pg_policies p where p.policyname = n and coalesce(p.qual, '') like '%is_admin()%');
-  if faltan is not null then
-    raise exception 'Falta aplicar 0002_admins_y_destacadas.sql: estas políticas de La Aurora Escucha todavía dejan entrar a cualquier sesión: %. Aplica la 0002 y vuelve a correr esta migración.', faltan;
-  end if;
-end $$;
 
 -- ============================================================
 -- 1. TABLAS
@@ -284,16 +277,6 @@ begin
     execute format('grant execute on function %s to authenticated', f);
   end loop;
 end $$;
-
--- La Aurora Escucha: una cuenta de JUMP nunca es admin, aunque tuviera un correo de la tabla admins.
-create or replace function public.is_admin()
-returns boolean language sql stable security definer set search_path = public as $$
-  select exists (
-    select 1 from public.admins a
-    where lower(a.email) = lower(coalesce(auth.jwt() ->> 'email', ''))
-  )
-  and not exists (select 1 from public.jump_miembros m where m.user_id = auth.uid());
-$$;
 
 -- ============================================================
 -- 3. RLS

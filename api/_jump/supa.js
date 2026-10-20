@@ -2,8 +2,15 @@
 // o de verificar el token del usuario.
 import { supa } from "./env.js";
 
+// Las tres variables del proyecto de JUMP o nada: sin ellas no se llama a ninguna base (ni a la de La Aurora).
+function cfg() {
+  const c = supa();
+  if (!c.url || !c.anon || !c.service) throw new Error("Faltan JUMP_SUPABASE_URL, JUMP_SUPABASE_ANON_KEY o JUMP_SUPABASE_SERVICE_ROLE_KEY");
+  return c;
+}
+
 export function rest(path, { method = "GET", body, prefer, jwt } = {}) {
-  const { url, anon, service } = supa();
+  const { url, anon, service } = cfg();
   const headers = {
     apikey: jwt ? anon : service,
     Authorization: `Bearer ${jwt || service}`,
@@ -14,7 +21,7 @@ export function rest(path, { method = "GET", body, prefer, jwt } = {}) {
 }
 
 export function authAdmin(path, { method = "GET", body } = {}) {
-  const { url, service } = supa();
+  const { url, service } = cfg();
   return fetch(`${url}/auth/v1/admin/${path}`, {
     method,
     headers: { apikey: service, Authorization: `Bearer ${service}`, "Content-Type": "application/json" },
@@ -25,7 +32,7 @@ export function authAdmin(path, { method = "GET", body } = {}) {
 // Usuario dueño del JWT (lo valida Supabase). null si el token no sirve.
 export async function authUsuario(jwt) {
   if (!jwt) return null;
-  const { url, anon } = supa();
+  const { url, anon } = cfg();
   const r = await fetch(`${url}/auth/v1/user`, { headers: { apikey: anon, Authorization: `Bearer ${jwt}` } });
   if (!r.ok) return null;
   const u = await r.json();
@@ -33,7 +40,7 @@ export async function authUsuario(jwt) {
 }
 
 export async function claveCorrecta(email, clave) {
-  const { url, anon } = supa();
+  const { url, anon } = cfg();
   const r = await fetch(`${url}/auth/v1/token?grant_type=password`, {
     method: "POST",
     headers: { apikey: anon, "Content-Type": "application/json" },

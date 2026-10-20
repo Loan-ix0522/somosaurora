@@ -400,7 +400,6 @@ export async function iniciarSim({ puerto = 0, raiz = RAIZ_REPO, db = null } = {
           if (hasOk && missOk) { res.statusCode = r.status; res.setHeader("location", r.headers.Location); return res.end(); }
         } else if (r.headers) for (const [k, v] of Object.entries(r.headers)) res.setHeader(k, v);
       }
-      if (p === "/api/config") return enviar(res, 200, { url: origen + "/supa", anonKey: "anon" });
       if (p.startsWith("/api/jump-")) {
         const h = await handler(p.slice(5));
         if (!h) return enviar(res, 404, { error: "no existe" });
@@ -430,7 +429,7 @@ export async function iniciarSim({ puerto = 0, raiz = RAIZ_REPO, db = null } = {
 
   // Entorno de las funciones /api/jump-* y Zoom falso en el fetch global.
   Object.assign(process.env, {
-    SUPABASE_URL: origen + "/supa", SUPABASE_ANON_KEY: "anon", SUPABASE_SERVICE_ROLE_KEY: "service",
+    JUMP_SUPABASE_URL: origen + "/supa", JUMP_SUPABASE_ANON_KEY: "anon", JUMP_SUPABASE_SERVICE_ROLE_KEY: "service",
     JUMP_SECRET: "s".repeat(48), JUMP_PUBLIC_URL: origen,
     ZOOM_CLIENT_ID: "zoom-id", ZOOM_CLIENT_SECRET: "zoom-secreto", ZOOM_WEBHOOK_SECRET: "zoom-webhook",
   });

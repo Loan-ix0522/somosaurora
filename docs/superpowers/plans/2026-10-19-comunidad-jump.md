@@ -10,7 +10,16 @@
 - muro;
 - datos de ejemplo que se pueden borrar.
 
-Todo va sobre el mismo Supabase y el mismo Vercel de La Aurora Escucha.
+JUMP usa **su propio proyecto de Supabase** (en la misma organización que el de La Aurora Escucha) y el mismo proyecto de Vercel.
+
+> **Enmienda del 2026-10-20 (decisión del usuario):** se separó la base. Antes JUMP compartía el Supabase de La Aurora; ahora no. Cambios que ya están en el código:
+> - la migración pasó de `supabase/migrations/0005_comunidad_jump.sql` a `supabase/jump/0001_comunidad_jump.sql`, sin la precondición de la 0002 ni el endurecimiento de `is_admin()` (no hacen falta);
+> - variables `JUMP_SUPABASE_URL`, `JUMP_SUPABASE_ANON_KEY` y `JUMP_SUPABASE_SERVICE_ROLE_KEY`, sin respaldo en las de La Aurora;
+> - el navegador lee `/api/jump-config` (nuevo) en vez de `/api/config`;
+> - la CSP de `/jump` nombra solo la base de JUMP (`JUMP_SUPABASE_HOST` en `scripts/csp.mjs`);
+> - `crearBase()` de las pruebas aplica solo la migración de JUMP.
+>
+> Las Tasks 1, 2, 3, 5 y 9 describen el estado anterior; el código vigente manda sobre lo que digan.
 
 **Arquitectura:**
 - **Página estática** `jump/comunidad/`, con módulos ES que usan supabase-js 2.45.4 desde la CDN con SRI. Las lecturas y escrituras van directo a Supabase y las decide RLS.
@@ -34,8 +43,8 @@ Todo va sobre el mismo Supabase y el mismo Vercel de La Aurora Escucha.
 - Commits con la línea final `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 
 **Supabase y seguridad**
-- Proyecto Supabase `jdterctcniotbipgwcdv`. El MCP de Supabase de esta sesión (inmoai) **no se toca**. Las migraciones las aplica el dueño en el SQL Editor.
-- Variables de entorno con *fallback*: `SUPABASE_URL||ProjectURL`, `SUPABASE_ANON_KEY||anonpublic`, `SUPABASE_SERVICE_ROLE_KEY||service_role`. Variables nuevas: `JUMP_SECRET` (≥ 32 caracteres), `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET`, `ZOOM_WEBHOOK_SECRET`, `JUMP_PUBLIC_URL`. Los secretos nunca en el chat ni en el repo.
+- Proyecto Supabase **propio de JUMP** (el de La Aurora, `jdterctcniotbipgwcdv`, no se toca). El MCP de Supabase de esta sesión (inmoai) **no se toca**. El dueño crea el proyecto y aplica la migración en su SQL Editor.
+- Variables de entorno de Supabase: `JUMP_SUPABASE_URL`, `JUMP_SUPABASE_ANON_KEY`, `JUMP_SUPABASE_SERVICE_ROLE_KEY`, **sin respaldo** en las de La Aurora (`SUPABASE_URL||ProjectURL`…). Variables nuevas: `JUMP_SECRET` (≥ 32 caracteres), `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET`, `ZOOM_WEBHOOK_SECRET`, `JUMP_PUBLIC_URL`. Los secretos nunca en el chat ni en el repo.
 - Correos internos: `c<cedula>@cuentas.laauroraescucha.com` y `<usuario>@equipo.laauroraescucha.com`.
 - Clave temporal `JUMP-####-####`, que vence en 7 días. Clave nueva: ≥ 8 caracteres y al menos un número.
 - Ventana de Zoom: desde 15 min antes del inicio hasta 30 min después del fin. Zona horaria `America/Guayaquil` (UTC−5, sin horario de verano).
@@ -79,7 +88,8 @@ Todo va sobre el mismo Supabase y el mismo Vercel de La Aurora Escucha.
 
 | Archivo | Responsabilidad |
 |---|---|
-| `supabase/migrations/0005_comunidad_jump.sql` | Precondición, tablas, funciones, RLS, buckets y políticas de Storage, endurecimiento de `is_admin()`, plantilla del primer admin |
+| `supabase/jump/0001_comunidad_jump.sql` | Tablas, funciones, RLS, buckets y políticas de Storage, plantilla del primer admin (proyecto de Supabase propio de JUMP) |
+| `api/jump-config.js` | URL y llave pública del proyecto de JUMP para el navegador |
 | `api/_jump/env.js` | Lectura de variables con *fallback* |
 | `api/_jump/http.js` | `json()`, `mismoOrigen()`, `leerJson()` |
 | `api/_jump/supa.js` | `rest()`, `authAdmin()`, `authUsuario()` contra Supabase |
@@ -748,10 +758,10 @@ Todo va sobre el mismo Supabase y el mismo Vercel de La Aurora Escucha.
 - [ ] **Paso 2: Evidencia.** Agregar a `docs/loanix/SECURITY.md` la sección "Comunidad JUMP (2026-10-19)" con la tabla caso de abuso → prueba → resultado, a partir de la salida de `node --test` y de `cdp.mjs`.
 - [ ] **Paso 3: Revisión visual.** Capturas a 1440 y 390 px de todas las rutas, comparadas con las capturas del mockup (`mockups/jump/.impeccable/review/`). Se corrige en una sola tanda todo lo que se aleje del contrato (amarillo solo para lo actual, avance en tinta, `dvh`) y se confirma con una segunda ronda.
 - [ ] **Paso 4: `docs/jump/PUESTA-EN-MARCHA.md`.** En español llano, en este orden:
-  1. revisar en Authentication → Settings que el registro siga apagado y "Confirm email" encendido;
-  2. pegar la 0005 en el SQL Editor y correrla;
+  1. crear el proyecto de Supabase de JUMP (en la misma organización que el de La Aurora), apagar en Authentication → Sign In / Providers el registro público ("Allow new users to sign up") y dejar "Confirm email" encendido; copiar de Settings → API el Project URL, la anon key y la service_role key;
+  2. pegar `supabase/jump/0001_comunidad_jump.sql` en el SQL Editor **del proyecto de JUMP** y correrlo;
   3. crear el primer admin (Add user con `usuario@equipo.laauroraescucha.com` y *Auto Confirm*, luego el `insert` de la plantilla);
-  4. poner en Vercel `JUMP_SECRET` y `JUMP_PUBLIC_URL` y hacer Redeploy;
+  4. poner en Vercel `JUMP_SUPABASE_URL`, `JUMP_SUPABASE_ANON_KEY`, `JUMP_SUPABASE_SERVICE_ROLE_KEY`, `JUMP_SECRET` y `JUMP_PUBLIC_URL`; escribir el Project URL en `JUMP_SUPABASE_HOST` de `scripts/csp.mjs`, correr `node scripts/csp.mjs`, subir y hacer Redeploy (sin ese paso el navegador bloquea la conexión);
   5. entrar a `/jump/comunidad/`, ir a Ajustes y "Cargar datos de ejemplo";
   6. crear la app de Zoom dentro de la cuenta de JUMP (General App, *user-managed*, el *redirect* exacto, los permisos de reunión y de usuario, el evento `app_deauthorized` con su URL) y poner `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET` y `ZOOM_WEBHOOK_SECRET`;
   7. Ajustes → Conectar Zoom;
@@ -760,6 +770,7 @@ Todo va sobre el mismo Supabase y el mismo Vercel de La Aurora Escucha.
 - [ ] **Paso 5: Verificación final.**
   - `cd tests/jump && node --test` → todo pasa;
   - `node tests/jump/ui/cdp.mjs todo` → todo en verde y 0 errores de consola;
-  - `node scripts/csp.mjs --check` → "CSP al día.".
-- [ ] **Paso 6: Copiar a la carpeta del dueño.** Copiar `jump/`, `api/_jump/`, `api/jump-*.js`, `supabase/migrations/0005_comunidad_jump.sql`, `scripts/csp.mjs`, `vercel.json`, `.vercelignore`, `.env.example`, `.gitignore`, `README.md`, `docs/jump/`, `docs/loanix/SECURITY.md` y `docs/superpowers/` a `C:/Users/Luisma/Downloads/somos aurora`.
+  - `node scripts/csp.mjs --check` → "CSP al día.";
+  - `vercel.json` ya no contiene `jump-supabase-pendiente.invalid` (si lo contiene, falta el Project URL de JUMP: se entrega así y la guía lo marca como paso obligatorio).
+- [ ] **Paso 6: Copiar a la carpeta del dueño.** Copiar `jump/`, `api/_jump/`, `api/jump-*.js`, `supabase/jump/0001_comunidad_jump.sql`, `scripts/csp.mjs`, `vercel.json`, `.vercelignore`, `.env.example`, `.gitignore`, `README.md`, `docs/jump/`, `docs/loanix/SECURITY.md` y `docs/superpowers/` a `C:/Users/Luisma/Downloads/somos aurora`.
 - [ ] **Paso 7: Commit y entrega.** Commit: `docs(jump): guía de puesta en marcha y evidencia de seguridad`. Preguntar al usuario antes de subir la rama al fork o abrir el PR.

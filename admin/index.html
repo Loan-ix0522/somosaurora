@@ -24,6 +24,13 @@
   .bar .wrap{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 32px}
   .brand{display:flex;align-items:center;gap:10px;font-weight:900;color:var(--blue);font-family:Montserrat}
   .brand .dot{width:12px;height:12px;border-radius:3px;background:var(--orange)}
+  /* pestañas */
+  .tabs{display:flex;gap:30px;max-width:1760px;margin:auto;padding:0 32px}
+  .tab{position:relative;background:none;border-radius:0;padding:10px 2px 13px;color:var(--muted);font-size:15px}
+  .tab:hover{color:var(--blue)}
+  .tab[aria-selected="true"]{color:var(--blue)}
+  .tab[aria-selected="true"]::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:3px;border-radius:3px 3px 0 0;background:var(--orange)}
+  .tab:focus-visible{outline:2px solid var(--blue2);outline-offset:-2px;border-radius:8px}
   /* login */
   .login{max-width:380px;margin:9vh auto;background:#fff;border:1px solid var(--line);border-radius:18px;padding:28px;box-shadow:0 18px 50px rgba(12,42,82,.1)}
   .login h1{font-size:24px;color:var(--blue);margin-bottom:6px}.login p{color:var(--muted);margin:0 0 18px;font-size:14px}
@@ -157,7 +164,7 @@
   @media(max-width:700px){.vis-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.vis-grid .stat{padding:14px 16px}.vis-grid .stat .n{font-size:24px}}
   @media (prefers-reduced-motion:no-preference){.win{animation:winIn .18s cubic-bezier(.16,1,.3,1)}}
   @keyframes winIn{from{opacity:0;transform:scale(.97) translateY(6px)}to{opacity:1;transform:none}}
-  @media(max-width:700px){.wrap{padding:18px 14px 28px}.bar .wrap{padding:12px 14px}.panel{padding:20px 16px}.kv-grid{grid-template-columns:1fr}}
+  @media(max-width:700px){.wrap{padding:18px 14px 28px}.bar .wrap{padding:12px 14px}.tabs{padding:0 14px;gap:24px}.panel{padding:20px 16px}.kv-grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -188,9 +195,14 @@
         <button id="logoutBtn" class="btn ghost">Salir</button>
       </div>
     </div>
+    <div class="tabs" id="tabs" role="tablist" aria-label="Secciones del panel">
+      <button type="button" class="tab" role="tab" id="tab-opiniones" aria-controls="pane-opiniones" aria-selected="true">Opiniones</button>
+      <button type="button" class="tab" role="tab" id="tab-visitas" aria-controls="pane-visitas" aria-selected="false" tabindex="-1">Visitas a la web</button>
+    </div>
   </header>
 
   <div class="wrap">
+    <section id="pane-opiniones" role="tabpanel" aria-labelledby="tab-opiniones">
     <div class="grid">
       <div class="stat"><div class="n" id="stTotal">0</div><div class="l">Opiniones (filtro actual)</div></div>
       <div class="stat"><div class="n" id="stProp">0</div><div class="l">Propuestas</div></div>
@@ -259,18 +271,6 @@
       <div class="field" style="margin:22px 0 0"><label for="resumen" style="font-weight:700;font-size:13px">Resumen del informe (opcional)</label><textarea id="resumen" rows="3" placeholder="Ej.: Esta semana predominaron los temas de basura y alumbrado…"></textarea></div>
     </div>
 
-    <!-- VISITAS A LA WEB -->
-    <div class="panel" id="visitasPanel">
-      <div class="vis-top">
-        <div>
-          <h2>Visitas a la web</h2>
-          <p class="sub">Cada vez que alguien abre una página pública de la web, con la hora de Ecuador. Lugar e IP son aproximados (los da la conexión). La IP se borra sola a los 30 días; la visita queda. Este panel no se cuenta.</p>
-        </div>
-        <button type="button" class="btn blue" data-vis="recargar">Recargar</button>
-      </div>
-      <div class="vis-body"><p class="muted">Cargando visitas…</p></div>
-    </div>
-
     <!-- ZONA PELIGRO -->
     <div class="panel">
       <h2>Archivar y limpiar</h2>
@@ -287,6 +287,21 @@
         </div>
       </div>
     </div>
+    </section>
+
+    <!-- VISITAS A LA WEB (pestaña aparte) -->
+    <section id="pane-visitas" role="tabpanel" aria-labelledby="tab-visitas" hidden>
+    <div class="panel" id="visitasPanel">
+      <div class="vis-top">
+        <div>
+          <h2>Visitas a la web</h2>
+          <p class="sub">Cada vez que alguien abre una página pública de la web, con la hora de Ecuador. Lugar e IP son aproximados (los da la conexión). La IP se borra sola a los 30 días; la visita queda. Este panel no se cuenta.</p>
+        </div>
+        <button type="button" class="btn blue" data-vis="recargar">Recargar</button>
+      </div>
+      <div class="vis-body"><p class="muted">Cargando visitas…</p></div>
+    </div>
+    </section>
 
     <div id="toast" class="msg" style="position:fixed;bottom:16px;right:16px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 16px;box-shadow:0 10px 30px rgba(12,42,82,.15);display:none"></div>
   </div>
@@ -385,6 +400,29 @@
 
   $('#logoutBtn').addEventListener('click', async ()=>{ await db.auth.signOut(); location.reload(); });
 
+  // ---- pestañas: Opiniones / Visitas a la web (con #visitas en la dirección se abre la segunda) ----
+  const tabs=[...document.querySelectorAll('#tabs [role=tab]')];
+  let visitasMontadas=false;
+  function abrirPestana(tab,foco){
+    if(foco) tab.focus();
+    if(tab.getAttribute('aria-selected')==='true') return;
+    tabs.forEach(t=>{ const on=t===tab; t.setAttribute('aria-selected',on); t.tabIndex=on?0:-1; $('#'+t.getAttribute('aria-controls')).hidden=!on; });
+    window.scrollTo(0,0);
+    const visitas=tab.id==='tab-visitas';
+    history.replaceState(null,'',visitas?'#visitas':location.pathname+location.search);
+    if(!visitas||!window.AuroraVisitas) return;
+    // la primera vez se cargan; al volver a la pestaña se traen las nuevas
+    if(!visitasMontadas){ visitasMontadas=true; AuroraVisitas.montar(db, $('#visitasPanel')); }
+    else $('#visitasPanel [data-vis=recargar]').click();
+  }
+  $('#tabs').addEventListener('click',e=>{ const t=e.target.closest('[role=tab]'); if(t) abrirPestana(t); });
+  $('#tabs').addEventListener('keydown',e=>{
+    const i=tabs.indexOf(document.activeElement); if(i<0) return;
+    const j={ArrowRight:i+1,ArrowLeft:i-1,Home:0,End:tabs.length-1}[e.key]; if(j===undefined) return;
+    e.preventDefault(); abrirPestana(tabs[(j+tabs.length)%tabs.length],true);
+  });
+  addEventListener('hashchange',()=>{ if(!$('#appView').classList.contains('hidden')) abrirPestana(tabs[location.hash==='#visitas'?1:0]); });
+
   async function enterApp(session){
     // Con la migración 0002 aplicada solo entran los correos de la tabla `admins`.
     // Si la función aún no existe (migración pendiente), no se bloquea el acceso.
@@ -404,7 +442,7 @@
     loadRows();
     renderPicks();
     loadLive(); loadRetention();
-    if(window.AuroraVisitas) AuroraVisitas.montar(db, $('#visitasPanel'));
+    if(location.hash==='#visitas') abrirPestana(tabs[1]);
   }
 
   // ---- datos ----

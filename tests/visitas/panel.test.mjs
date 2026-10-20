@@ -66,3 +66,25 @@ test("el panel carga /admin/panel-visitas.js con ruta absoluta y tiene su secci�
   assert.match(html, /id="visitasPanel"/);
   assert.match(html, /AuroraVisitas\.montar\(db, \$\('#visitasPanel'\)\)/);
 });
+
+test("las visitas van en su propia pestaña, aparte de las opiniones", () => {
+  const html = leer("admin/index.html");
+  const seccion = (id) => {
+    const m = html.match(new RegExp(`<section id="${id}"[^>]*>([\\s\\S]*?)</section>`));
+    assert.ok(m, `falta la sección ${id}`);
+    return { abre: m[0].slice(0, m[0].indexOf(">") + 1), dentro: m[1] };
+  };
+  assert.match(html, /role="tablist"/);
+  assert.match(html, /<button[^>]*role="tab"[^>]*aria-controls="pane-opiniones"[^>]*aria-selected="true"/);
+  assert.match(html, /<button[^>]*role="tab"[^>]*aria-controls="pane-visitas"[^>]*aria-selected="false"/);
+
+  const op = seccion("pane-opiniones"), vis = seccion("pane-visitas");
+  assert.match(op.abre, /role="tabpanel"/);
+  assert.match(vis.abre, /role="tabpanel"/);
+  assert.match(vis.abre, /\bhidden\b/, "al entrar se ve la pestaña de opiniones");
+  for (const id of ["stTotal", "tbl", "topList", "purgeBtn"]) assert.match(op.dentro, new RegExp(`id="${id}"`));
+  assert.match(vis.dentro, /id="visitasPanel"/);
+  assert.doesNotMatch(op.dentro, /id="visitasPanel"/);
+  // el aviso flotante sirve a las dos pestañas: no puede quedar escondido dentro de una
+  assert.doesNotMatch(op.dentro + vis.dentro, /id="toast"/);
+});

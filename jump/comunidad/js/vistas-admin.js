@@ -1,5 +1,5 @@
 // Equipo JUMP: resumen, mentorías, clases en vivo, emprendedores y avisos (mockup "El aula", con datos reales).
-import { $, $$, esc, ic, fig, iniciales, plural, toast, copiar, fieldErr, ocupado } from "./ui.js";
+import { $, $$, esc, ic, fig, iniciales, plural, toast, copiar, fieldErr, ocupado, asegurarDialogo } from "./ui.js";
 import * as datos from "./datos.js";
 import { haceCuanto, fechaCorta, rango, estadoClase, aISO } from "./fechas.js";
 import { dateTile, whenText, nowPill, vacio, mMeta } from "./piezas.js";
@@ -57,14 +57,6 @@ function avance(m) {
   return m.estado === "publicada" && n ? Math.min(100, Math.round((m.vistos / n) * 100)) : null;
 }
 const tono = (id) => parseInt(String(id).slice(-2), 16) % 4;
-
-// Diálogos: viven fuera de #app (no se borran al volver a dibujar la página).
-export function asegurarDialogo(id, html) {
-  if (document.getElementById(id)) return;
-  document.body.insertAdjacentHTML("beforeend", html);
-  const d = document.getElementById(id);
-  d.addEventListener("click", (e) => { if (e.target === d) d.close(); });
-}
 
 // ---------- resumen ----------
 const todo = (icono, aviso, html, href, enlace) =>

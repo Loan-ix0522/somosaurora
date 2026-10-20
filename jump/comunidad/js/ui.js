@@ -44,6 +44,14 @@ export async function ocupado(boton, promesa) {
   finally { boton.disabled = false; boton.classList.remove("is-loading"); boton.removeAttribute("aria-busy"); }
 }
 
+// Diálogos: viven fuera de #app (no se borran al volver a dibujar la página).
+export function asegurarDialogo(id, html) {
+  if (document.getElementById(id)) return;
+  document.body.insertAdjacentHTML("beforeend", html);
+  const d = document.getElementById(id);
+  d.addEventListener("click", (e) => { if (e.target === d) d.close(); });
+}
+
 // El salto de la figura entre módulos (mockup). Sin animación si la persona pidió menos movimiento.
 export function hop(desde, hasta, listo) {
   if (reduce || !desde || !hasta) return listo();

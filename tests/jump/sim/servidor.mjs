@@ -7,7 +7,8 @@
 //                                    Accept: application/vnd.pgrst.object+json
 //           /supa/rest/v1/rpc/<fn>  POST con argumentos por nombre
 //   Auth    /supa/auth/v1/token (password, refresh_token), /user, /logout, /admin/users[/:id]
-//   Storage /supa/storage/v1/object/<bucket>/<ruta>, /object/sign/…, /object/public/…, DELETE /object/<bucket>
+//   Storage /supa/storage/v1/object/<bucket>/<ruta>, /object/sign/… (una ruta o varias: createSignedUrls),
+//           /object/public/…, DELETE /object/<bucket>
 import http from "node:http";
 import { readFileSync, existsSync, statSync } from "node:fs";
 import { join, extname } from "node:path";
@@ -298,6 +299,19 @@ export async function iniciarSim({ puerto = 0, raiz = RAIZ_REPO, db = null } = {
     if (modo === "sign/" && req.method === "GET") {
       if (firmas.get(url.searchParams.get("token")) !== llave || !archivos.has(llave)) throw errorSt(400, "InvalidSignature", "invalid signature");
       return enviarArchivo(res, archivos.get(llave));
+    }
+    if (modo === "sign/" && req.method === "POST" && !nombre) { // createSignedUrls: varias rutas en una llamada
+      const { paths = [] } = JSON.parse(cuerpoBuf.toString() || "{}");
+      const out = [];
+      for (const p of paths) {
+        let ok = false;
+        try { ok = !!(await como(db, q.quien, "select name from storage.objects where bucket_id = $1 and name = $2", [bucket, p])).rows[0]; } catch { /* sin permiso */ }
+        if (!ok) { out.push({ error: "Either the object does not exist or you do not have access to it", path: p, signedURL: null }); continue; }
+        const t = randomUUID();
+        firmas.set(t, `${bucket}/${p}`);
+        out.push({ error: null, path: p, signedURL: `/object/sign/${bucket}/${p}?token=${t}` });
+      }
+      return enviar(res, 200, out);
     }
     if (modo === "sign/" && req.method === "POST") {
       if (!(await leerFila(q.quien))) throw errorSt(404, "not_found", "Object not found");

@@ -451,6 +451,61 @@ tr.is-new{animation:newrow 2.4s var(--ease-out)}
 .readonly span{font-size:13px;color:var(--ink-3);font-weight:600}
 .readonly b{font-size:15.5px}
 
+/* ---------- muro de la comunidad ---------- */
+/* Una columna de lectura; sin amarillo (aquí nada es "lo actual"). */
+.muro{max-width:680px;display:grid;gap:16px}
+.composer{display:grid;gap:12px;padding:18px 20px}
+.composer-t{font-weight:800;font-size:1.0625rem;font-stretch:112%;letter-spacing:-.01em;line-height:1.12}
+.composer .textarea{min-height:96px}
+.composer-previa{position:relative;justify-self:start;max-width:100%;border-radius:14px;overflow:hidden;background:var(--sky-50)}
+.composer-previa img{display:block;max-width:100%;max-height:240px}
+.composer-previa .icon-btn{position:absolute;top:8px;right:8px;background:rgba(5,11,34,.62);color:#fff}
+.composer-previa .icon-btn:hover{background:rgba(5,11,34,.82);color:#fff}
+.composer-foot{display:flex;align-items:center;gap:12px}
+.composer-foot .btn-primary{margin-left:auto}
+.count{font-size:13px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.count.is-max{color:var(--bad);font-weight:700}
+.feed{display:grid;gap:16px;min-width:0}
+.post{display:grid;gap:12px;min-width:0;padding:18px 20px 16px}
+.post-head{display:flex;align-items:center;gap:12px;min-width:0}
+.post-who{flex:1;min-width:0}
+.post-who p:first-child{font-size:14.5px;line-height:1.35;overflow-wrap:anywhere}
+.post-who p:first-child span{color:var(--ink-2)}
+.post-who .m-meta{font-size:13px}
+.post-acts{display:flex;gap:6px;flex:none}
+.post-text{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.55}
+/* La foto: ancho de la columna y, si es vertical, recortada a 4:5 como máximo (toca para verla completa). */
+.post-foto{display:block;container-type:inline-size;border-radius:14px;overflow:hidden;background:var(--sky-50)}
+.post-foto img{display:block;width:100%;height:auto;max-height:125cqw;object-fit:cover}
+.post-foto.is-missing{display:flex;align-items:center;gap:8px;padding:18px;color:var(--ink-3);font-size:14px}
+.post.is-hidden{background:#FBFCFE}
+.post.is-hidden .post-who,.post.is-hidden .post-text,.post.is-hidden .post-foto,.post.is-hidden .coms{opacity:.55}
+.post-flag{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;font-size:13.5px;font-weight:600;color:var(--ink-2)}
+.post-flag .ic{width:18px;height:18px;color:var(--ink-3)}
+.post-coms{display:grid;gap:10px;padding-top:12px;border-top:1px solid var(--line)}
+.coms-head{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13.5px;font-weight:600;color:var(--ink-3)}
+.coms{display:grid;gap:10px;margin:0;padding:0;list-style:none}
+.com{display:flex;align-items:flex-start;gap:10px}
+.com-body{flex:1;min-width:0;padding:8px 12px 9px;border-radius:14px;background:var(--sky-50)}
+.com-who{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;font-size:13.5px}
+.com-who .m-meta{font-size:12.5px}
+.com-text{margin-top:2px;font-size:14.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.com-flag{margin-top:6px;font-size:12.5px;color:var(--ink-3)}
+.com.is-hidden .com-who,.com.is-hidden .com-text{opacity:.55}
+.com-acts{display:flex;flex:none}
+.com-acts .icon-btn{width:32px;height:32px}
+.com-form{display:flex;align-items:center;gap:10px}
+.com-form .input{flex:1;min-width:0;height:40px;padding:0 16px;border-radius:99px}
+.ava.sm{width:30px;height:30px;font-size:11.5px}
+.ava-team{background:var(--navy);color:#fff}
+.ava-team .fig{width:15px;height:auto}
+.muro-mas{display:flex;justify-content:center;padding-top:4px}
+@media (max-width:560px){
+  .composer,.post{padding:16px}
+  .post-acts .btn-sm{width:36px;padding:0}
+  .post-acts .lbl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+}
+
 /* ---------- diálogos y avisos flotantes ---------- */
 dialog{width:100%;max-width:min(460px,calc(100vw - 32px));padding:0;border:0;border-radius:20px;color:var(--ink);background:#fff;box-shadow:0 30px 80px -30px rgba(5,11,34,.55)}
 dialog::backdrop{background:rgba(5,11,34,.5)}

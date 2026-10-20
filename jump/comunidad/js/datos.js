@@ -1,6 +1,7 @@
 // Acceso a Supabase y a /api/jump-* de la Comunidad JUMP.
 // Ninguna función devuelve errores crudos: todas lanzan ErrorJump { codigo, mensaje, campo? }.
 //   codigo: "credenciales" | "suspendida" | "sin_acceso" | "limite" | "red" | "sesion" | "prohibido" | "invalido" | "servidor"
+//           | "limite_publicaciones" | "limite_comentarios" | "foto_ilegible" (muro)
 import { correoEmprendedor, correoEquipo, limpiarCedula } from "./cedula.js";
 import { aISO, fechaCorta, partes } from "./fechas.js";
 import { reducirFoto } from "./medios.js";
@@ -482,4 +483,107 @@ export async function publicarAviso(texto) {
   await iniciar();
   const r = await q(sb.from("jump_avisos").insert({ tipo: "aviso", texto: texto.trim() }).select("*").single());
   return aAviso(r.data);
+}
+
+// ---------- muro ----------
+
+export const MSG_MURO = {
+  limite_publicaciones: "Llegaste al límite de 10 publicaciones por día.",
+  limite_comentarios: "Llegaste al límite de 50 comentarios por día.",
+  foto_ilegible: "Esa foto no se pudo leer. Prueba con otra o toma una captura de pantalla.",
+};
+// Los límites diarios los pone la base (triggers de la 0005) con raise exception.
+async function qMuro(consulta) {
+  let r;
+  try { r = await consulta; } catch { throw new ErrorJump("red"); }
+  const c = r.error && ["limite_publicaciones", "limite_comentarios"].find((x) => (r.error.message || "").includes(x));
+  if (c) throw new ErrorJump(c, MSG_MURO[c]);
+  return q(Promise.resolve(r));
+}
+
+// Nombre corto y negocio de cada miembro activo (jump_directorio). Se renueva con cada página del muro.
+let directorio = new Map();
+const autorDe = (id) => directorio.get(id) || { nombre: "Integrante de JUMP", negocio: null, rol: "emprendedor" };
+const aComentario = (c) => ({
+  id: c.id, postId: c.post_id, autorId: c.autor_id, texto: c.texto, creadoEn: c.creado_en,
+  oculto: !!c.oculto_en, esEjemplo: !!c.es_ejemplo, autor: autorDe(c.autor_id),
+});
+const aPost = (p) => ({
+  id: p.id, autorId: p.autor_id, texto: p.texto, foto: p.foto, fotoUrl: null, creadoEn: p.creado_en,
+  oculto: !!p.oculto_en, esEjemplo: !!p.es_ejemplo, autor: autorDe(p.autor_id), comentarios: [],
+});
+
+// Una página del muro, de la más nueva a la más vieja, con sus comentarios y las fotos firmadas por 10 min.
+// RLS deja fuera lo oculto (salvo para su autor y el equipo).
+export async function listarPosts({ antesDe, limite = 20 } = {}) {
+  await iniciar();
+  let c = sb.from("jump_posts").select("*").order("creado_en", { ascending: false }).limit(limite + 1);
+  if (antesDe) c = c.lt("creado_en", antesDe);
+  const [ps, dir] = await Promise.all([q(c), q(sb.rpc("jump_directorio"))]);
+  directorio = new Map(dir.data.map((d) => [d.user_id, { nombre: d.nombre, negocio: d.negocio, rol: d.rol }]));
+  const posts = ps.data.slice(0, limite).map(aPost);
+  if (posts.length) {
+    const conFoto = posts.filter((p) => p.foto);
+    const [cs, fs] = await Promise.all([
+      q(sb.from("jump_comentarios").select("*").in("post_id", posts.map((p) => p.id)).order("creado_en")),
+      conFoto.length ? q(sb.storage.from("jump-muro").createSignedUrls(conFoto.map((p) => p.foto), 600)) : { data: [] },
+    ]);
+    const porId = new Map(posts.map((p) => [p.id, p]));
+    for (const x of cs.data) porId.get(x.post_id)?.comentarios.push(aComentario(x));
+    const urls = new Map(fs.data.filter((f) => f.signedUrl).map((f) => [f.path, f.signedUrl]));
+    for (const p of conFoto) p.fotoUrl = urls.get(p.foto) || null;
+  }
+  return { posts, hayMas: ps.data.length > limite };
+}
+
+// La foto se reduce (sin metadatos) y se sube antes que la fila; si la fila no entra, se borra la foto.
+export async function publicarPost({ texto, foto }) {
+  const s = await sesion();
+  if (!s) throw new ErrorJump("sesion");
+  let ruta = null, blob = null;
+  if (foto) {
+    try { blob = await reducirFoto(foto, 1600); } catch { throw new ErrorJump("foto_ilegible", MSG_MURO.foto_ilegible); }
+    ruta = `${s.user.id}/${crypto.randomUUID()}.${blob.type === "image/webp" ? "webp" : "jpg"}`;
+    await q(sb.storage.from("jump-muro").upload(ruta, blob, { contentType: blob.type, upsert: false }));
+  }
+  let r;
+  try {
+    r = await qMuro(sb.from("jump_posts").insert({ texto: texto.trim(), foto: ruta }).select("*").single());
+  } catch (e) {
+    if (ruta) await sb.storage.from("jump-muro").remove([ruta]).catch(() => {});
+    throw e;
+  }
+  const p = aPost(r.data);
+  if (blob) p.fotoUrl = URL.createObjectURL(blob); // la que ya está en el navegador: se ve sin esperar otra descarga
+  return p;
+}
+
+// Solo su autor puede borrarla (RLS); la foto se va con ella.
+export async function borrarPost(id) {
+  await iniciar();
+  const r = await q(sb.from("jump_posts").delete().eq("id", id).select("foto"));
+  const foto = r.data?.[0]?.foto;
+  if (foto) await sb.storage.from("jump-muro").remove([foto]).catch(() => {});
+}
+
+export async function comentar(postId, texto) {
+  await iniciar();
+  let r;
+  try { r = await sb.from("jump_comentarios").insert({ post_id: postId, texto: texto.trim() }).select("*").single(); } catch { throw new ErrorJump("red"); }
+  // RLS no deja comentar una publicación que el equipo acaba de ocultar (o que su autor borró).
+  if (r.error?.code === "42501") throw new ErrorJump("prohibido", "Ya no se puede comentar en esta publicación.");
+  return aComentario((await qMuro(Promise.resolve(r))).data);
+}
+
+export async function borrarComentario(id) {
+  await iniciar();
+  await q(sb.from("jump_comentarios").delete().eq("id", id));
+}
+
+// Equipo: ocultar o volver a mostrar una publicación o un comentario.
+export async function ocultar(tipo, id, si) {
+  const s = await sesion();
+  if (!s) throw new ErrorJump("sesion");
+  await q(sb.from(tipo === "post" ? "jump_posts" : "jump_comentarios")
+    .update(si ? { oculto_en: ahoraISO(), oculto_por: s.user.id } : { oculto_en: null, oculto_por: null }).eq("id", id));
 }

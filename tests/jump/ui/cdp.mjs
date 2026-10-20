@@ -42,6 +42,8 @@ await new Promise((r) => ws.addEventListener("open", r));
 let nid = 0;
 const pendientes = new Map();
 const consola = [];
+// Respuestas de error que un escenario provoca a propósito (p. ej. el 400 del límite diario del muro): no cuentan como falla.
+let erroresEsperados = [];
 ws.addEventListener("message", (e) => {
   const m = JSON.parse(e.data);
   if (m.id && pendientes.has(m.id)) { pendientes.get(m.id)(m); pendientes.delete(m.id); }
@@ -51,7 +53,8 @@ ws.addEventListener("message", (e) => {
     const url = m.params.entry.url || "";
     // Las fuentes de Google pueden fallar sin red; no son de la app.
     // Una clave mala o una cuenta baneada es un 400 de Auth que el navegador registra solo; la app lo maneja.
-    const esperado = /fonts\.(googleapis|gstatic)\.com/.test(url) || (/\/auth\/v1\/token\?grant_type=password$/.test(url) && /status of 400/.test(m.params.entry.text));
+    const esperado = /fonts\.(googleapis|gstatic)\.com/.test(url) || (/\/auth\/v1\/token\?grant_type=password$/.test(url) && /status of 400/.test(m.params.entry.text))
+      || erroresEsperados.some(([u, t]) => u.test(url) && t.test(m.params.entry.text));
     if (!esperado) consola.push("LOG " + m.params.entry.text + (url ? " " + url : ""));
   }
 });
@@ -161,6 +164,29 @@ const atraparAperturas = () => ev(`(() => {
   return true;
 })()`);
 const desborde = () => ev("document.documentElement.scrollWidth - innerWidth");
+// Elige un archivo creado en el navegador: una foto PNG dibujada en un canvas, o un archivo con el contenido dado.
+const elegirArchivo = (sel, { nombre = "feria.png", tipo = "image/png", contenido = null } = {}) => ev(`(async () => {
+  let b;
+  if (${JSON.stringify(contenido)} === null) {
+    const c = document.createElement("canvas"); c.width = 900; c.height = 600;
+    const g = c.getContext("2d"); g.fillStyle = "#0B1F5C"; g.fillRect(0, 0, 900, 600); g.fillStyle = "#DCE4FA"; g.fillRect(120, 120, 380, 240);
+    b = await new Promise((r) => c.toBlob(r, "image/png"));
+  } else b = new Blob([${JSON.stringify(contenido)}], { type: ${JSON.stringify(tipo)} });
+  const dt = new DataTransfer(); dt.items.add(new File([b], ${JSON.stringify(nombre)}, { type: ${JSON.stringify(tipo)} }));
+  const i = document.querySelector(${JSON.stringify(sel)});
+  if (!i) throw new Error("no existe ${sel.replace(/"/g, "'")}");
+  i.files = dt.files; i.dispatchEvent(new Event("change", { bubbles: true }));
+  return true;
+})()`);
+// Una publicación sembrada directo en la base (como si la persona la hubiera hecho).
+const sembrarPost = async (p, texto, extra = {}) =>
+  (await fila("insert into public.jump_posts (autor_id, texto, creado_en) values ($1, $2, $3) returning id", [p.id, texto, extra.creadoEn || new Date().toISOString()])).id;
+const abrirMuro = async (p, { equipo = false } = {}) => {
+  if (equipo) await entrarEquipo(); else { await entrar(p); await esperar(`location.hash === "#e/inicio"`); }
+  await ir(equipo ? "a/muro" : "e/muro");
+  await esperar(`!!document.querySelector("#muroForm") && !!document.querySelector("#muroLista")`);
+};
+const enPost = (id, sel = "") => `[data-post="${id}"] ${sel}`.trim();
 
 // ---------- escenarios ----------
 const ESCENARIOS = {
@@ -613,6 +639,145 @@ const ESCENARIOS = {
         }
         await foto("a-movil-avisos");
         return malas.length === 0 || malas.join(", ");
+      } finally {
+        await send("Emulation.setDeviceMetricsOverride", { width: W, height: H, deviceScaleFactor: 1, mobile: movil });
+      }
+    },
+    csp: async () => {
+      const csp = consola.filter((c) => /Content Security Policy|Refused to/i.test(c));
+      return csp.length === 0 || csp.join(" | ");
+    },
+  },
+
+  muro: {
+    "muro-vacio": async () => {
+      await abrirMuro(X.E);
+      const t = await esperar(`document.querySelector("#muroLista .empty")?.textContent.trim()`);
+      await foto("muro-vacio");
+      return (t.includes("Todavía no hay publicaciones") && t.includes("Cuenta tu primer avance.")) || t;
+    },
+    "muro-publicar": async () => {
+      await abrirMuro(X.E);
+      await escribir("#muroTexto", "Hoy vendí 30 empanadas en la feria de La Aurora.");
+      await elegirArchivo('input[data-cambio="muroFoto"]');
+      await esperar(`!document.querySelector("#muroPrevia").hidden && document.querySelector("#muroPrevia img")?.naturalWidth > 0`);
+      await dobleClic("#muroForm [type=submit]");
+      await esperar(`[...document.querySelectorAll("#muroLista [data-post] .post-text")].some((p) => p.textContent.includes("30 empanadas"))`);
+      await esperar(`(() => { const i = document.querySelector("#muroLista [data-post] .post-foto img"); return !!i && i.complete && i.naturalWidth > 0; })()`);
+      await dormir(400); // por si un segundo envío llegara tarde
+      const filas = (await sql("select texto, foto from public.jump_posts where autor_id = $1", [X.E.id])).rows;
+      await foto("muro-publicado");
+      if (filas.length !== 1) return `filas: ${filas.length}`;
+      if (!new RegExp(`^${X.E.id}/[0-9a-f-]{36}\\.webp$`).test(filas[0].foto || "")) return "foto: " + filas[0].foto;
+      if (!sim.archivos.has("jump-muro/" + filas[0].foto)) return "la foto no quedó en Storage";
+      if (await ev(`!document.querySelector("#muroPrevia").hidden || document.querySelector("#muroTexto").value !== ""`)) return "el formulario no se limpió";
+      return true;
+    },
+    "muro-comentar": async () => {
+      const id = await sembrarPost(X.E, "¿Cómo ponen el precio a sus productos?");
+      await abrirMuro(X.E2);
+      await esperar(`!!document.querySelector('${enPost(id, ".com-form input")}')`);
+      await escribir(enPost(id, ".com-form input"), "Yo sumo el costo y le pongo un 30 % encima.");
+      await clic(enPost(id, ".com-form [type=submit]"));
+      await esperar(`document.querySelector('${enPost(id)}').textContent.includes("un 30 % encima")`);
+      const n = await fila("select count(*)::int n from public.jump_comentarios where post_id = $1 and autor_id = $2", [id, X.E2.id]);
+      if (n.n !== 1) return "comentarios en la base: " + n.n;
+      await abrirMuro(X.E);
+      const t = await esperar(`document.querySelector('${enPost(id)}')?.textContent`);
+      return (t.includes("un 30 % encima") && t.includes("Carlos M.") && t.includes("1 comentario")) || t.replace(/\s+/g, " ").slice(0, 300);
+    },
+    "muro-xss": async () => {
+      const malo = "<img src=x onerror=alert(1)>";
+      await abrirMuro(X.E2);
+      await escribir("#muroTexto", malo);
+      await clic("#muroForm [type=submit]");
+      await esperar(`[...document.querySelectorAll(".post-text")].some((p) => p.textContent.includes(${JSON.stringify(malo)}))`);
+      if (await ev(`!!document.querySelector('img[src="x"]')`)) return "se creó la imagen al publicar";
+      await ir("e/inicio");
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector(".page-head h1")`);
+      await ir("e/muro");
+      await esperar(`[...document.querySelectorAll(".post-text")].some((p) => p.textContent.includes(${JSON.stringify(malo)}))`);
+      return !(await ev(`!!document.querySelector('img[src="x"]')`)) || "se creó la imagen al volver a cargar";
+    },
+    "muro-foto-ilegible": async () => {
+      await abrirMuro(X.E2);
+      const antes = [...sim.archivos.keys()].filter((k) => k.startsWith("jump-muro/")).length;
+      const postsAntes = (await fila("select count(*)::int n from public.jump_posts")).n;
+      await elegirArchivo('input[data-cambio="muroFoto"]', { nombre: "foto.jpg", tipo: "image/jpeg", contenido: "esto no es una foto, es texto" });
+      const t = await esperar(`(() => { const e = document.querySelector("#muroErr"); return e && !e.hidden && e.textContent.trim(); })()`);
+      await clic("#muroForm [type=submit]");
+      await dormir(500);
+      const despues = [...sim.archivos.keys()].filter((k) => k.startsWith("jump-muro/")).length;
+      const postsDespues = (await fila("select count(*)::int n from public.jump_posts")).n;
+      if (!t.includes("Esa foto no se pudo leer. Prueba con otra o toma una captura de pantalla.")) return "mensaje: " + t;
+      if (await ev(`!document.querySelector("#muroPrevia").hidden`)) return "quedó la vista previa";
+      return (despues === antes && postsDespues === postsAntes) || `subió algo: archivos ${antes}→${despues}, publicaciones ${postsAntes}→${postsDespues}`;
+    },
+    "muro-ocultar": async () => {
+      const id = await sembrarPost(X.E, "Vendo canguil en la esquina de la cancha.");
+      await abrirMuro(X.A, { equipo: true });
+      await esperar(`!!document.querySelector('${enPost(id, '[data-act="muroOcultar"]')}')`);
+      await clic(enPost(id, '[data-act="muroOcultar"]'));
+      await esperar(`document.querySelector('${enPost(id)}')?.textContent.includes("Oculto por el equipo")`);
+      await foto("muro-oculto-equipo");
+      const f = await fila("select oculto_en, oculto_por from public.jump_posts where id = $1", [id]);
+      if (!f.oculto_en || f.oculto_por !== X.A.id) return "en la base: " + JSON.stringify(f);
+      await abrirMuro(X.E2);
+      await esperar(`!document.querySelector("#muroLista .is-loading")`);
+      if (await ev(`!!document.querySelector('${enPost(id)}')`)) return "E2 todavía la ve";
+      await abrirMuro(X.E);
+      const t = await esperar(`document.querySelector('${enPost(id)}')?.textContent`);
+      await foto("muro-oculto-autor");
+      return t.includes("El equipo ocultó esta publicación") || t.replace(/\s+/g, " ").slice(0, 200);
+    },
+    "muro-limite": async () => {
+      const ya = (await fila("select count(*)::int n from public.jump_posts where autor_id = $1 and creado_en > now() - interval '24 hours'", [X.E2.id])).n;
+      for (let i = ya; i < 10; i++) await sembrarPost(X.E2, `Publicación de relleno ${i + 1}`);
+      await abrirMuro(X.E2);
+      await escribir("#muroTexto", "La número once.");
+      erroresEsperados = [[/\/rest\/v1\/jump_posts\?select=\*$/, /status of 400/]]; // la base rechaza la 11.ª (trigger)
+      let t;
+      try {
+        await clic("#muroForm [type=submit]");
+        t = await esperar(`(() => { const e = document.querySelector("#muroErr"); return e && !e.hidden && e.textContent.trim(); })()`);
+        await dormir(300); // que llegue el registro del 400 mientras se acepta
+      } finally { erroresEsperados = []; }
+      const n = (await fila("select count(*)::int n from public.jump_posts where autor_id = $1 and creado_en > now() - interval '24 hours'", [X.E2.id])).n;
+      if (n !== 10) return "publicaciones: " + n;
+      return t.includes("Llegaste al límite de 10 publicaciones por día.") || "mensaje: " + t;
+    },
+    "muro-borrar": async () => {
+      await abrirMuro(X.E);
+      await escribir("#muroTexto", "Esta la voy a borrar.");
+      await elegirArchivo('input[data-cambio="muroFoto"]');
+      await esperar(`!document.querySelector("#muroPrevia").hidden`);
+      await clic("#muroForm [type=submit]");
+      const f = await esperar(`(() => { const t = [...document.querySelectorAll("#muroLista [data-post]")].find((a) => a.textContent.includes("Esta la voy a borrar.")); return t && t.dataset.post; })()`);
+      const p = await fila("select foto from public.jump_posts where id = $1", [f]);
+      if (!p?.foto || !sim.archivos.has("jump-muro/" + p.foto)) return "no se subió la foto";
+      await clic(enPost(f, '[data-act="muroBorrar"]'));
+      await esperar(`!!document.querySelector("#dlgBorrarPost[open]")`);
+      await foto("muro-borrar-confirmar");
+      await clic("#borrarPostForm [type=submit]");
+      await esperar(`!document.querySelector('${enPost(f)}')`);
+      const sigue = await fila("select id from public.jump_posts where id = $1", [f]);
+      if (sigue) return "la fila sigue en la base";
+      return !sim.archivos.has("jump-muro/" + p.foto) || "la foto sigue en Storage";
+    },
+    "muro-movil": async () => {
+      await sembrarPost(X.E, "Palabra-larguísima-sin-espacios-".repeat(8) + " para ver que no desborda."); // E2 ya llegó al límite
+      await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+      try {
+        await abrirMuro(X.E);
+        await esperar(`document.querySelectorAll("#muroLista [data-post]").length > 0`);
+        await dormir(200);
+        const e = await desborde();
+        await foto("muro-390");
+        await abrirMuro(X.A, { equipo: true });
+        await esperar(`document.querySelectorAll("#muroLista [data-post]").length > 0`);
+        await dormir(200);
+        const a = await desborde();
+        return (e === 0 && a === 0) || `desborde: emprendedor ${e}px, equipo ${a}px`;
       } finally {
         await send("Emulation.setDeviceMetricsOverride", { width: W, height: H, deviceScaleFactor: 1, mobile: movil });
       }

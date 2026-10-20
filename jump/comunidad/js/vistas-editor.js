@@ -1,11 +1,11 @@
 // Equipo JUMP: editor de mentorías (crear, editar, publicar, pasar a borrador y borrar). Mockup "El aula", con datos reales.
 // Los cambios de texto se guardan al publicar o guardar el borrador. Lo que se sube (archivos, enlaces, reunión de Zoom)
 // queda guardado en el momento; si la mentoría todavía no existe en la base, primero se guarda.
-import { $, esc, ic, plural, toast, fieldErr, ocupado } from "./ui.js";
+import { $, esc, ic, plural, toast, fieldErr, ocupado, asegurarDialogo } from "./ui.js";
 import * as datos from "./datos.js";
 import { aCampos, aISO } from "./fechas.js";
 import { vacio, ftype, tamano, dominio } from "./piezas.js";
-import { cargar, invalidar, activas, asegurarDialogo } from "./vistas-admin.js";
+import { cargar, invalidar, activas } from "./vistas-admin.js";
 import { ir } from "./app.js";
 
 let ED = null; // la mentoría que se está editando (sobrevive a salir y volver mientras no se guarde otra)

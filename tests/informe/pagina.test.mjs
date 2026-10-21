@@ -209,6 +209,13 @@ test("si ya pasó la fecha del próximo y faltan opiniones, dice que sale en cua
   assert.doesNotMatch(h, /a partir del/);
 });
 
+test("si ya tocaba y ya llegaron suficientes, dice que sale en la próxima revisión (no que esperen a que lleguen)", async () => {
+  const h = await mostrar({ ...INFORME(), proximo: new Date(Date.now() - DIA).toISOString(), nuevas: 12 });
+  assert.match(h, /han llegado 12 opiniones nuevas/);
+  assert.match(h, /próximo informe sale en la próxima revisión/i);
+  assert.doesNotMatch(h, /en cuanto lleguen/);
+});
+
 test("un informe con pocas opiniones (manual) avisa que es solo una referencia; no promete que se vaya a mover", async () => {
   const pocas = await mostrar({ ...INFORME(), total: 4, temas: [{ tema: "Basura y aseo", total: 4, porcentaje: 100 }] });
   assert.match(pocas, /pocas opiniones[^<]*referencia/i);

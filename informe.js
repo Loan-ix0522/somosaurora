@@ -77,9 +77,12 @@
     }
     var prox = ecuador(d.proximo);
     if (prox) {
-      partes.push(Date.parse(d.proximo) <= Date.now()
-        ? 'El próximo informe saldrá en cuanto lleguen al menos ' + min + ' opiniones nuevas.'
-        : 'El próximo informe sale a partir del ' + esc(prox.dia) + ', si llegan al menos ' + min + ' opiniones nuevas; si no, este se mantiene.');
+      var tocaYa = Date.parse(d.proximo) <= Date.now();
+      var bastan = typeof d.nuevas === 'number' && d.nuevas >= min;
+      partes.push(!tocaYa
+        ? 'El próximo informe sale a partir del ' + esc(prox.dia) + ', si llegan al menos ' + min + ' opiniones nuevas; si no, este se mantiene.'
+        : bastan ? 'El próximo informe sale en la próxima revisión (se hace una vez al día).'
+        : 'El próximo informe saldrá en cuanto lleguen al menos ' + min + ' opiniones nuevas.');
     }
     return partes.length ? '<p class="siguiente">' + partes.join(' ') + '</p>' : '';
   }

@@ -162,6 +162,19 @@
   .vis-mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13px}
   .vis-pager{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:12px;margin:12px 0 0;font-size:13px;color:var(--muted)}
   @media(max-width:700px){.vis-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.vis-grid .stat{padding:14px 16px}.vis-grid .stat .n{font-size:24px}}
+  /* informe público */
+  .inf-h{margin-top:30px}
+  .stat .n.txt{font-size:19px;line-height:1.25}
+  .inf-lista{display:grid;gap:10px;margin:6px 0 4px;max-width:760px}
+  .inf-fila{display:grid;grid-template-columns:minmax(150px,230px) 1fr 52px 40px;align-items:center;gap:12px;font-size:14px}
+  .inf-barra{height:10px;background:#edf2f7;border-radius:9px;overflow:hidden}
+  .inf-barra i{display:block;height:100%;background:var(--blue2)}
+  .inf-pct{text-align:right;color:var(--blue)}
+  .inf-n{text-align:right;font-size:13px}
+  .inf-prev{border:1px solid var(--line);border-radius:14px;padding:18px 20px;background:#fbfdff;margin-bottom:6px}
+  .inf-prev .btn{margin-top:14px}
+  .inf-vigente{display:inline-block;font-size:12px;font-weight:700;color:var(--green);margin-right:8px}
+  @media(max-width:700px){.inf-fila{grid-template-columns:1fr 52px}.inf-fila .inf-barra{grid-column:1/-1;order:3}.inf-fila .inf-n{display:none}}
   @media (prefers-reduced-motion:no-preference){.win{animation:winIn .18s cubic-bezier(.16,1,.3,1)}}
   @keyframes winIn{from{opacity:0;transform:scale(.97) translateY(6px)}to{opacity:1;transform:none}}
   @media(max-width:700px){.wrap{padding:18px 14px 28px}.bar .wrap{padding:12px 14px}.tabs{padding:0 14px;gap:24px}.panel{padding:20px 16px}.kv-grid{grid-template-columns:1fr}}
@@ -198,6 +211,7 @@
     <div class="tabs" id="tabs" role="tablist" aria-label="Secciones del panel">
       <button type="button" class="tab" role="tab" id="tab-opiniones" aria-controls="pane-opiniones" aria-selected="true">Opiniones</button>
       <button type="button" class="tab" role="tab" id="tab-visitas" aria-controls="pane-visitas" aria-selected="false" tabindex="-1">Visitas a la web</button>
+      <button type="button" class="tab" role="tab" id="tab-informe" aria-controls="pane-informe" aria-selected="false" tabindex="-1">Informe público</button>
     </div>
   </header>
 
@@ -303,6 +317,33 @@
     </div>
     </section>
 
+    <!-- INFORME PÚBLICO (pestaña aparte) -->
+    <section id="pane-informe" role="tabpanel" aria-labelledby="tab-informe" hidden>
+    <div class="panel" id="informePanel">
+      <div class="vis-top">
+        <div>
+          <h2>Informe público</h2>
+          <p class="sub">Los porcentajes de la página «Informe ciudadano» de la web. Cada 5 días sale solo un informe nuevo con las opiniones que llegaron, siempre que sean al menos 10; si llegan menos, se mantiene el anterior y se sigue sumando. Aquí ves cuál está publicado, puedes preparar uno por fechas y retirar uno. Solo se publican conteos por tema: nunca textos ni datos de las personas.</p>
+        </div>
+        <button type="button" class="btn blue" data-inf="recargar">Recargar</button>
+      </div>
+      <div class="vis-body">
+        <h3 class="sec-h">Lo que ve el público ahora</h3>
+        <div data-inf="actual"><p class="muted">Cargando…</p></div>
+        <h3 class="sec-h inf-h">Preparar un informe por fechas</h3>
+        <p class="muted vis-nota">Elige los días (hora de Ecuador, ambos incluidos). «Calcular» solo muestra una vista previa; «Publicar» lo deja visible en la web al instante.</p>
+        <div class="toolbar">
+          <div class="f"><label for="infDesde">Desde</label><input type="date" id="infDesde" data-inf="desde"></div>
+          <div class="f"><label for="infHasta">Hasta</label><input type="date" id="infHasta" data-inf="hasta"></div>
+          <div class="acts"><button type="button" class="btn blue" data-inf="calcular">Calcular</button></div>
+        </div>
+        <div data-inf="prev" aria-live="polite"></div>
+        <h3 class="sec-h inf-h">Informes publicados</h3>
+        <div data-inf="historial"></div>
+      </div>
+    </div>
+    </section>
+
     <div id="toast" class="msg" style="position:fixed;bottom:16px;right:16px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 16px;box-shadow:0 10px 30px rgba(12,42,82,.15);display:none"></div>
   </div>
 </div>
@@ -312,6 +353,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js" integrity="sha384-GFr3yTh5lJznCbZfpTtXnwboFsxqtTQoeTZCRHhE0579KrRmlCzen5AA8ohaB5ug" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="/admin/panel-visitas.js"></script>
+<script src="/admin/panel-informe.js"></script>
 <script>
 (function(){
   const $ = (s)=>document.querySelector(s);
@@ -400,20 +442,26 @@
 
   $('#logoutBtn').addEventListener('click', async ()=>{ await db.auth.signOut(); location.reload(); });
 
-  // ---- pestañas: Opiniones / Visitas a la web (con #visitas en la dirección se abre la segunda) ----
+  // ---- pestañas: Opiniones / Visitas a la web / Informe público (con #visitas o #informe en la dirección se abre esa) ----
   const tabs=[...document.querySelectorAll('#tabs [role=tab]')];
-  let visitasMontadas=false;
+  const HASH={'tab-visitas':'#visitas','tab-informe':'#informe'};
+  const tabDeHash=()=>tabs.find(t=>HASH[t.id]===location.hash)||tabs[0];
+  const PANELES={
+    'tab-visitas':{ lib:'AuroraVisitas', montar:()=>AuroraVisitas.montar(db, $('#visitasPanel')), recargar:'#visitasPanel [data-vis=recargar]' },
+    'tab-informe':{ lib:'AuroraInforme', montar:()=>AuroraInforme.montar(db, $('#informePanel')), recargar:'#informePanel [data-inf=recargar]' },
+  };
+  const montadas={};
   function abrirPestana(tab,foco){
     if(foco) tab.focus();
     if(tab.getAttribute('aria-selected')==='true') return;
     tabs.forEach(t=>{ const on=t===tab; t.setAttribute('aria-selected',on); t.tabIndex=on?0:-1; $('#'+t.getAttribute('aria-controls')).hidden=!on; });
     window.scrollTo(0,0);
-    const visitas=tab.id==='tab-visitas';
-    history.replaceState(null,'',visitas?'#visitas':location.pathname+location.search);
-    if(!visitas||!window.AuroraVisitas) return;
+    history.replaceState(null,'',HASH[tab.id]||location.pathname+location.search);
+    const p=PANELES[tab.id];
+    if(!p||!window[p.lib]) return;
     // la primera vez se cargan; al volver a la pestaña se traen las nuevas
-    if(!visitasMontadas){ visitasMontadas=true; AuroraVisitas.montar(db, $('#visitasPanel')); }
-    else $('#visitasPanel [data-vis=recargar]').click();
+    if(!montadas[tab.id]){ montadas[tab.id]=true; p.montar(); }
+    else $(p.recargar).click();
   }
   $('#tabs').addEventListener('click',e=>{ const t=e.target.closest('[role=tab]'); if(t) abrirPestana(t); });
   $('#tabs').addEventListener('keydown',e=>{
@@ -421,7 +469,7 @@
     const j={ArrowRight:i+1,ArrowLeft:i-1,Home:0,End:tabs.length-1}[e.key]; if(j===undefined) return;
     e.preventDefault(); abrirPestana(tabs[(j+tabs.length)%tabs.length],true);
   });
-  addEventListener('hashchange',()=>{ if(!$('#appView').classList.contains('hidden')) abrirPestana(tabs[location.hash==='#visitas'?1:0]); });
+  addEventListener('hashchange',()=>{ if(!$('#appView').classList.contains('hidden')) abrirPestana(tabDeHash()); });
 
   async function enterApp(session){
     // Con la migración 0002 aplicada solo entran los correos de la tabla `admins`.
@@ -442,7 +490,7 @@
     loadRows();
     renderPicks();
     loadLive(); loadRetention();
-    if(location.hash==='#visitas') abrirPestana(tabs[1]);
+    if(tabDeHash()!==tabs[0]) abrirPestana(tabDeHash());
   }
 
   // ---- datos ----

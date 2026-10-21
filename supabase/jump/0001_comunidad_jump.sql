@@ -297,6 +297,10 @@ end $$;
 drop policy if exists jump_miembros_leer on public.jump_miembros;
 create policy jump_miembros_leer on public.jump_miembros
   for select to authenticated using (user_id = auth.uid() or public.jump_es_admin());
+-- Desde el navegador jump_miembros solo se lee. Sin policies de escritura la RLS ya lo impide, pero el permiso de tabla
+-- que Supabase da de fábrica a authenticated quedaría detrás de esa única capa: se quita (las altas, los cambios de rol y
+-- de estado van por la API con service_role, y el perfil y el último ingreso por funciones security definer).
+revoke insert, update, delete on table public.jump_miembros from authenticated;
 
 -- Contenido: los miembros leen lo publicado; el equipo hace todo.
 drop policy if exists jump_mentorias_leer on public.jump_mentorias;

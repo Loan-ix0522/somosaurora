@@ -18,7 +18,7 @@
       "permanent": true
     },
     {
-      "source": "/((?!api/blocked$|api/purge$).*)",
+      "source": "/((?!api/blocked$|api/purge$|api/jump-zoom-deauth$).*)",
       "has": [
         {
           "type": "header",
@@ -30,7 +30,7 @@
       "permanent": false
     },
     {
-      "source": "/((?!api/blocked$|api/purge$).*)",
+      "source": "/((?!api/blocked$|api/purge$|api/jump-zoom-deauth$).*)",
       "missing": [
         {
           "type": "header",
@@ -102,7 +102,7 @@
       ]
     },
     {
-      "source": "/((?!admin(?:/|$)).*)",
+      "source": "/((?!admin(?:/|$)|jump(?:/|$)).*)",
       "headers": [
         {
           "key": "Content-Security-Policy",
@@ -141,6 +141,33 @@
         {
           "key": "Cache-Control",
           "value": "no-store"
+        }
+      ]
+    },
+    {
+      "source": "/jump/(.*)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; script-src 'self' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js; img-src 'self' data: blob: https://yibbjwpitawmfnrnyjek.supabase.co; connect-src 'self' https://yibbjwpitawmfnrnyjek.supabase.co; frame-src https://www.youtube-nocookie.com https://player.vimeo.com; media-src 'none'"
+        }
+      ]
+    },
+    {
+      "source": "/jump",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; script-src 'self' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js; img-src 'self' data: blob: https://yibbjwpitawmfnrnyjek.supabase.co; connect-src 'self' https://yibbjwpitawmfnrnyjek.supabase.co; frame-src https://www.youtube-nocookie.com https://player.vimeo.com; media-src 'none'"
+        }
+      ]
+    },
+    {
+      "source": "/jump/comunidad/(.*)",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow, noai, noimageai"
         }
       ]
     }

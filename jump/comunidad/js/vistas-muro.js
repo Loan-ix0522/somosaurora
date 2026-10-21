@@ -61,13 +61,13 @@ function postHtml(p) {
     ${aviso}
     ${p.texto ? `<p class="post-text">${esc(p.texto)}</p>` : ""}
     ${fotoHtml(p)}
-    <div class="post-coms">
-      ${n ? `<div class="coms-head"><span>${plural(n, "comentario", "comentarios")}</span>${n > 2 && !abierto ? `<button type="button" class="btn-link" data-act="muroVerTodos" data-id="${p.id}">Ver todos</button>` : ""}</div>` : ""}
+    ${n || !p.oculto ? `<div class="post-coms">
+      ${n ?`<div class="coms-head"><span>${plural(n, "comentario", "comentarios")}</span>${n > 2 && !abierto ? `<button type="button" class="btn-link" data-act="muroVerTodos" data-id="${p.id}">Ver todos</button>` : ""}</div>` : ""}
       ${lista.length ? `<ul class="coms">${lista.map(comHtml).join("")}</ul>` : ""}
       ${p.oculto ? "" : `<form class="com-form" data-envio="muroComentar" data-post="${p.id}" novalidate>${avatar(yoId(), yoComoAutor(), "sm")}
         <input class="input" name="texto" maxlength="500" placeholder="Escribe un comentario" aria-label="Escribe un comentario a ${nombre}" autocomplete="off" enterkeyhint="send">
         <button type="submit" class="icon-btn com-send" aria-label="Comentar" title="Comentar">${ic("send")}</button></form>`}
-    </div></article>`;
+    </div>` : ""}</article>`;
 }
 
 const masHtml = () => (M.hayMas ? '<div class="muro-mas"><button type="button" class="btn btn-ghost" data-act="muroMas">Ver más</button></div>' : "");

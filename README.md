@@ -69,7 +69,7 @@ La página `informe-demo.html` muestra los porcentajes por tema de las opiniones
 
 - **Automático:** cada día a las 07:30 UTC (02:30 en Ecuador) Vercel Cron llama a `/api/informe-auto`. Si ya pasaron 5 días desde el último informe **y** llegaron al menos 10 opiniones nuevas, publica uno nuevo con las opiniones de ese periodo. Si llegaron menos de 10 **no publica**: el informe anterior se mantiene y el periodo sigue acumulando hasta que alcancen. El primer informe cuenta los últimos 30 días.
 - **Manual:** en `/admin` → pestaña **Informe público** el equipo elige un rango de fechas (hasta 31 días), ve la **vista previa** y lo **publica**. También puede **retirar** un informe (vuelve a verse el anterior). Un informe manual reinicia el reloj de los 5 días.
-- **Mientras no haya ninguno publicado** (o si falta aplicar la migración) la página muestra el conteo en vivo de los últimos 30 días. Debajo de cada informe se ve cuántas opiniones han llegado desde su corte y cuándo sale el próximo.
+- **Mientras no haya ninguno publicado** (o si falta aplicar la migración) la página muestra el conteo en vivo de los últimos 30 días. La página muestra solo el periodo y los porcentajes (nunca cuántas opiniones hay) y `/api/informe` tampoco manda cantidades.
 - **Activarlo (una sola vez):** aplica `0007_informe_publico.sql` en el SQL Editor de Supabase y haz Redeploy. Usa el mismo `CRON_SECRET` de la limpieza: no hay variables nuevas. Sin la migración, `/api/informe-auto` responde 500 con el aviso "Falta aplicar la migración 0007_informe_publico.sql."
 - **Comprobarlo:** el panel muestra el informe vigente y cuándo toca el próximo. Para probar sin publicar:
   ```bash

@@ -71,7 +71,8 @@ test("publicar: guarda el informe como 'manual' con lo que contó el servidor y 
   const publico = await (await informe(new Request(SITIO + "/api/informe"))).json();
   assert.equal(publico.modo, "informe");
   assert.equal(publico.origen, "manual");
-  assert.equal(publico.total, 3);
+  assert.ok(publico.temas.length > 0, "trae sus porcentajes");
+  assert.equal("total" in publico, false, "pero no cuántas opiniones fueron");
 });
 
 test("si 'hasta' es hoy el corte es ahora", async () => {

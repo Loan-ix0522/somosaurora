@@ -32,7 +32,7 @@ beforeEach(() => {
 });
 afterEach(() => { globalThis.fetch = fetchOriginal; process.env = envOriginal; });
 
-test("con un informe publicado muestra ese: sus porcentajes, su periodo y de dónde salió", async () => {
+test("con un informe publicado muestra ese: sus porcentajes, su periodo y los temas sin opiniones", async () => {
   montar({ informes: [informe()] });
   const r = await handler(pedir());
   assert.equal(r.status, 200);
@@ -40,54 +40,36 @@ test("con un informe publicado muestra ese: sus porcentajes, su periodo y de dó
   assert.equal(d.ok, true);
   assert.equal(d.modo, "informe");
   assert.equal(d.origen, "automatico");
-  assert.equal(d.total, 10);
   assert.equal(d.desde, "2026-10-16T13:00:00.000Z");
   assert.equal(d.hasta, "2026-10-21T13:00:00.000Z");
   assert.equal(d.publicado, "2026-10-21T13:00:00.000Z");
-  assert.deepEqual(d.temas.slice(0, 2), [{ tema: "Agua potable y cortes", total: 8, porcentaje: 80 }, { tema: "Calles y baches", total: 2, porcentaje: 20 }]);
+  assert.deepEqual(d.temas, [{ tema: "Agua potable y cortes", porcentaje: 80 }, { tema: "Calles y baches", porcentaje: 20 }]);
+  assert.deepEqual(d.sin_opiniones, ["Alcantarillado e inundaciones", "Tráfico y movilidad", "Basura y aseo", "Alumbrado público", "Áreas verdes y parques", "Otro servicio"]);
   assert.equal(d.temas.reduce((a, t) => a + t.porcentaje, 0), 100);
 });
 
 test("entre varios informes manda el publicado más recientemente (un manual puede reemplazar al automático)", async () => {
   montar({ informes: [
-    informe({ id: "viejo", created_at: "2026-10-16T13:00:00+00:00", origen: "automatico", total: 14 }),
-    informe({ id: "nuevo", created_at: "2026-10-22T09:00:00+00:00", origen: "manual", total: 31 }),
-    informe({ id: "medio", created_at: "2026-10-19T09:00:00+00:00", origen: "automatico", total: 22 }),
+    informe({ id: "viejo", created_at: "2026-10-16T13:00:00+00:00", origen: "automatico", por_tema: [{ tema: "Basura y aseo", total: 14, porcentaje: 100 }] }),
+    informe({ id: "nuevo", created_at: "2026-10-22T09:00:00+00:00", origen: "manual", por_tema: [{ tema: "Alumbrado público", total: 31, porcentaje: 100 }] }),
+    informe({ id: "medio", created_at: "2026-10-19T09:00:00+00:00", origen: "automatico", por_tema: [{ tema: "Calles y baches", total: 22, porcentaje: 100 }] }),
   ] });
   const d = await (await handler(pedir())).json();
   assert.equal(d.origen, "manual");
-  assert.equal(d.total, 31);
+  assert.deepEqual(d.temas, [{ tema: "Alumbrado público", porcentaje: 100 }]);
 });
 
-test("dice cuántas opiniones han llegado desde el corte, cuándo toca el próximo y el mínimo para publicarlo", async () => {
+test("no cuenta ni dice cuántas opiniones han llegado desde el corte (no consulta las opiniones), pero sí cuándo toca el próximo", async () => {
   const hasta = new Date("2026-10-21T13:00:00.000Z");
-  montar({
-    informes: [informe()],
-    opiniones: [opinion("Basura y aseo", hasta, -1 * DIA), opinion("Basura y aseo", hasta, -2 * DIA), opinion("Calles y baches", hasta, 1 * DIA)], // 2 después del corte, 1 antes
-  });
+  montar({ informes: [informe()], opiniones: [opinion("Basura y aseo", hasta, -1 * DIA), opinion("Calles y baches", hasta, 1 * DIA)] });
   const d = await (await handler(pedir())).json();
-  assert.equal(d.nuevas, 2);
-  assert.equal(d.proximo, "2026-10-26T13:00:00.000Z");
-  assert.equal(d.minimo, 10);
-  // El conteo de "nuevas" es de un solo tramo (desde el corte), con la service role y solo el número.
-  const c = sb.de("submissions");
-  assert.equal(c.length, 1);
-  assert.equal(c[0].metodo, "HEAD");
-  assert.equal(c[0].init.headers.apikey, "clave-servicio");
-  assert.deepEqual(new URL(c[0].url).searchParams.getAll("created_at"), ["gte.2026-10-21T13:00:00.000Z"]);
-});
-
-test("si no se puede contar las nuevas, igual muestra el informe (solo falta ese dato)", async () => {
-  montar({ informes: [informe()] });
-  sb.estado.falla = (ruta) => ruta === "submissions";
-  const d = await (await handler(pedir())).json();
-  assert.equal(d.ok, true);
-  assert.equal(d.modo, "informe");
   assert.equal("nuevas" in d, false);
+  assert.equal("minimo" in d, false);
   assert.equal(d.proximo, "2026-10-26T13:00:00.000Z");
+  assert.equal(sb.de("submissions").length, 0);
 });
 
-test("lee el informe con la service role, pide solo el último y devuelve únicamente conteos y fechas", async () => {
+test("lee el informe con la service role, pide solo el último y devuelve únicamente porcentajes y fechas", async () => {
   montar({ informes: [informe()] });
   const d = await (await handler(pedir())).json();
   const g = sb.de("informe_publico")[0];
@@ -96,15 +78,17 @@ test("lee el informe con la service role, pide solo el último y devuelve única
   const q = new URL(g.url).searchParams;
   assert.equal(q.get("order"), "created_at.desc");
   assert.equal(q.get("limit"), "1");
-  assert.deepEqual(Object.keys(d).sort(), ["desde", "hasta", "minimo", "modo", "nuevas", "ok", "origen", "proximo", "publicado", "temas", "total"]);
-  assert.deepEqual(Object.keys(d.temas[0]).sort(), ["porcentaje", "tema", "total"]);
+  assert.deepEqual(Object.keys(d).sort(), ["desde", "hasta", "modo", "ok", "origen", "proximo", "publicado", "sin_opiniones", "temas"]);
+  assert.deepEqual(Object.keys(d.temas[0]).sort(), ["porcentaje", "tema"]);
   assert.ok(!JSON.stringify(d).includes("inf-0"), "el id interno no sale");
+  assert.ok(!/"total"|"nuevas"|"minimo"/.test(JSON.stringify(d)), "ninguna cantidad de opiniones");
 });
 
-test("solo deja pasar tema, total y porcentaje de cada fila, aunque la tabla traiga algo más", async () => {
+test("solo deja pasar tema y porcentaje de cada fila, aunque la tabla traiga algo más (ni las cantidades)", async () => {
   montar({ informes: [informe({ por_tema: [{ tema: "Basura y aseo", total: "7", porcentaje: 100, texto: "dato interno", celular: "099" }] })] });
   const d = await (await handler(pedir())).json();
-  assert.deepEqual(d.temas, [{ tema: "Basura y aseo", total: 7, porcentaje: 100 }]);
+  assert.deepEqual(d.temas, [{ tema: "Basura y aseo", porcentaje: 100 }]);
+  assert.deepEqual(d.sin_opiniones, []);
 });
 
 test("el informe se guarda en caché unos minutos, igual que el conteo en vivo", async () => {
@@ -120,7 +104,6 @@ test("sin ningún informe publicado cuenta en vivo los últimos 30 días (modo e
   const d = await (await handler(pedir())).json();
   assert.equal(d.ok, true);
   assert.equal(d.modo, "en-curso");
-  assert.equal(d.total, 2);
   assert.equal(d.ventana_dias, 30);
   assert.equal(d.temas[0].tema, "Basura y aseo");
   assert.equal(d.temas[0].porcentaje, 100);
@@ -132,7 +115,7 @@ test("si la tabla informe_publico no existe todavía (migración 0007 sin aplica
   assert.equal(r.status, 200);
   const d = await r.json();
   assert.equal(d.modo, "en-curso");
-  assert.equal(d.total, 1);
+  assert.equal(d.temas[0].tema, "Basura y aseo");
 });
 
 test("si falla la lectura del informe (y no es que falte la tabla) no inventa el conteo en vivo: responde 502 y sin caché", async () => {

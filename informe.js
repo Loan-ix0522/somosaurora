@@ -28,16 +28,17 @@
     return '<p class="estado">No pudimos cargar los porcentajes en este momento. Intenta de nuevo en unos minutos.</p>';
   }
 
-  function tarjetasHtml(temas) {
-    var con = temas.filter(function (t) { return t.total > 0; });
-    var sin = temas.filter(function (t) { return !(t.total > 0); });
-    var tarjetas = con.map(function (t) {
+  // Una tarjeta por tema con porcentaje; los temas que no tienen ninguna opinión se nombran aparte
+  // (`sin`, que ya viene del servidor: aquí no se cuenta nada).
+  function tarjetasHtml(temas, sin) {
+    var tarjetas = temas.filter(function (t) { return Number(t.porcentaje) > 0; }).map(function (t) {
       var p = Number(t.porcentaje) || 0;
       return '<div class="card"><div class="num">' + p + '%</div><b>' + esc(t.tema) + '</b>' +
         '<div class="bar" role="img" aria-label="' + p + ' por ciento"><i style="width:' + p + '%"></i></div></div>';
     }).join('');
+    var nombres = Array.isArray(sin) ? sin : [];
     return '<div class="grid">' + tarjetas + '</div>' +
-      (sin.length ? '<p class="sin">Sin opiniones por ahora: ' + sin.map(function (t) { return esc(t.tema); }).join(', ') + '.</p>' : '');
+      (nombres.length ? '<p class="sin">Sin opiniones por ahora: ' + nombres.map(function (n) { return esc(n); }).join(', ') + '.</p>' : '');
   }
 
   // "del 16 oct al 21 oct" (o "el 26 oct" si es un solo día). El corte es exclusivo: el último día
@@ -64,17 +65,18 @@
       hasta ? 'actualizado el ' + esc(hasta.dia) + ' a las ' + esc(hasta.hora) : ''
     ]);
     var nota = '<p class="aviso">Todavía no se ha publicado el primer informe. Mientras tanto, estos porcentajes se calculan con las opiniones de los últimos 30 días y se ponen al día solos. El informe oficial sale cada 5 días.</p>';
-    if (!(Number(d.total) > 0)) {
+    var hay = d.temas.some(function (t) { return Number(t.porcentaje) > 0; });
+    if (!hay) {
       return meta + nota + '<p class="estado">Todavía no hay opiniones en este periodo. En cuanto la comunidad envíe las primeras, aparecerán aquí.</p>';
     }
-    return meta + nota + tarjetasHtml(d.temas);
+    return meta + nota + tarjetasHtml(d.temas, d.sin_opiniones);
   }
 
   // El último informe publicado (automático cada 5 días, o el que prepara el equipo desde /admin/):
   // solo el periodo y los porcentajes.
   function publicadoHtml(d) {
     var dias = periodo(d.desde, d.hasta);
-    return linea([dias ? 'Periodo: ' + dias : '']) + tarjetasHtml(d.temas);
+    return linea([dias ? 'Periodo: ' + dias : '']) + tarjetasHtml(d.temas, d.sin_opiniones);
   }
 
   function informeHtml(d) {

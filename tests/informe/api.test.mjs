@@ -36,18 +36,14 @@ beforeEach(() => {
 });
 afterEach(() => { globalThis.fetch = fetchOriginal; process.env = envOriginal; });
 
-test("reparte las opiniones reales en porcentajes que suman 100, de mayor a menor", async () => {
+test("reparte las opiniones reales en porcentajes que suman 100, de mayor a menor; los temas sin opiniones van aparte", async () => {
   const r = await handler(pedir());
   assert.equal(r.status, 200);
   const d = await r.json();
   assert.equal(d.ok, true);
-  assert.equal(d.total, 10);
   assert.equal(d.ventana_dias, 30);
-  assert.deepEqual(d.temas.map((t) => [t.tema, t.total, t.porcentaje]), [
-    ["Tráfico y movilidad", 6, 60], ["Basura y aseo", 3, 30], ["Alumbrado público", 1, 10],
-    ["Agua potable y cortes", 0, 0], ["Alcantarillado e inundaciones", 0, 0], ["Calles y baches", 0, 0],
-    ["Áreas verdes y parques", 0, 0], ["Otro servicio", 0, 0],
-  ]);
+  assert.deepEqual(d.temas.map((t) => [t.tema, t.porcentaje]), [["Tráfico y movilidad", 60], ["Basura y aseo", 30], ["Alumbrado público", 10]]);
+  assert.deepEqual(d.sin_opiniones, ["Agua potable y cortes", "Alcantarillado e inundaciones", "Calles y baches", "Áreas verdes y parques", "Otro servicio"]);
   assert.equal(d.temas.reduce((a, t) => a + t.porcentaje, 0), 100);
 });
 
@@ -79,23 +75,32 @@ test("lo que no es de ningún tema conocido va aparte, como 'Otros temas'", asyn
     return new Response(null, { status: 200, headers: { "content-range": n ? `0-0/${n}` : "*/0" } });
   };
   const d = await (await handler(pedir())).json();
-  assert.equal(d.total, 5);
-  assert.deepEqual(d.temas.slice(0, 2).map((t) => [t.tema, t.total, t.porcentaje]), [["Otros temas", 3, 60], ["Basura y aseo", 2, 40]]);
+  assert.deepEqual(d.temas.map((t) => [t.tema, t.porcentaje]), [["Otros temas", 60], ["Basura y aseo", 40]]);
+  assert.ok(!d.sin_opiniones.includes("Otros temas") && !d.sin_opiniones.includes("Basura y aseo"));
 });
 
-test("sin opiniones: total 0, todos en 0 % y nada de errores", async () => {
+test("un tema con alguna opinión pero menos del 1 % no tiene tarjeta, y tampoco se dice que no tiene opiniones", async () => {
+  globalThis.fetch = supabaseFalso({ "Basura y aseo": 299, "Calles y baches": 1 });
+  const d = await (await handler(pedir())).json();
+  assert.deepEqual(d.temas, [{ tema: "Basura y aseo", porcentaje: 100 }]);
+  assert.ok(!d.sin_opiniones.includes("Calles y baches"));
+  assert.ok(d.sin_opiniones.includes("Alumbrado público"));
+});
+
+test("sin opiniones: ningún tema con porcentaje, todos aparte y nada de errores", async () => {
   globalThis.fetch = supabaseFalso({});
   const d = await (await handler(pedir())).json();
   assert.equal(d.ok, true);
-  assert.equal(d.total, 0);
-  assert.ok(d.temas.every((t) => t.total === 0 && t.porcentaje === 0));
+  assert.deepEqual(d.temas, []);
+  assert.deepEqual([...d.sin_opiniones].sort(), [...TEMAS].sort());
 });
 
-test("la respuesta solo lleva conteos y fechas: nada personal", async () => {
+test("la respuesta solo lleva porcentajes y fechas: ni cantidades ni nada personal", async () => {
   const d = await (await handler(pedir())).json();
   assert.equal(d.modo, "en-curso");
-  assert.deepEqual(Object.keys(d).sort(), ["actualizado", "desde", "modo", "ok", "temas", "total", "ventana_dias"]);
-  assert.deepEqual(Object.keys(d.temas[0]).sort(), ["porcentaje", "tema", "total"]);
+  assert.deepEqual(Object.keys(d).sort(), ["actualizado", "desde", "modo", "ok", "sin_opiniones", "temas", "ventana_dias"]);
+  assert.deepEqual(Object.keys(d.temas[0]).sort(), ["porcentaje", "tema"]);
+  assert.ok(!/"total"|"nuevas"|"minimo"/.test(JSON.stringify(d)), "ninguna cantidad de opiniones");
 });
 
 test("se guarda en caché unos minutos y el navegador vuelve a pedir pronto (actualiza día a día)", async () => {

@@ -11,14 +11,13 @@ const CODIGO = leer("informe.js");
 const PAGINA = leer("informe-demo.html");
 
 const DATOS = {
-  ok: true, modo: "en-curso", ventana_dias: 30, desde: "2026-09-21T13:14:00.000Z", actualizado: "2026-10-21T13:14:00.000Z", total: 57,
+  ok: true, modo: "en-curso", ventana_dias: 30, desde: "2026-09-21T13:14:00.000Z", actualizado: "2026-10-21T13:14:00.000Z",
   temas: [
-    { tema: "Tráfico y movilidad", total: 32, porcentaje: 56 },
-    { tema: "Basura y aseo", total: 14, porcentaje: 25 },
-    { tema: "Alumbrado público", total: 11, porcentaje: 19 },
-    { tema: "Agua potable y cortes", total: 0, porcentaje: 0 },
-    { tema: "Calles y baches", total: 0, porcentaje: 0 },
+    { tema: "Tráfico y movilidad", porcentaje: 56 },
+    { tema: "Basura y aseo", porcentaje: 25 },
+    { tema: "Alumbrado público", porcentaje: 19 },
   ],
+  sin_opiniones: ["Agua potable y cortes", "Calles y baches"],
 };
 const CITAS = { ok: true, items: [
   { texto: "Falta alumbrado en la calle principal.", autor_display: "Residente", tema: "Alumbrado público", sector: "Villa Club" },
@@ -67,7 +66,7 @@ test("conteo en vivo: dice de qué días es y cuándo se actualizó (hora de Ecu
 });
 
 test("sin opiniones: explica que aún no hay y no dibuja tarjetas", async () => {
-  const vacio = { ...DATOS, total: 0, temas: DATOS.temas.map((t) => ({ ...t, total: 0, porcentaje: 0 })) };
+  const vacio = { ...DATOS, temas: [], sin_opiniones: ["Basura y aseo", "Calles y baches"] };
   const h = (await correr({ api: () => respuesta(vacio) })).caja.innerHTML;
   assert.match(h, /todavía no hay opiniones/i);
   assert.doesNotMatch(h, /class="card"/);
@@ -88,10 +87,10 @@ test("si el informe no carga (corte, error o respuesta rara) muestra un aviso am
 });
 
 test("escapa lo que viene del servidor (un tema o una cita con HTML no se ejecuta)", async () => {
-  const malo = { ...DATOS, temas: [{ tema: '<img src=x onerror="alert(1)">', total: 5, porcentaje: 100 }], total: 5 };
+  const malo = { ...DATOS, temas: [{ tema: '<img src=x onerror="alert(1)">', porcentaje: 100 }], sin_opiniones: ['<b>x</b>'] };
   const citas = { ok: true, items: [{ texto: '<script>alert(2)</script> "hola"', autor_display: "<b>yo</b>" }] };
   const { caja, zonaCitas } = await correr({ api: () => respuesta(malo), citas: () => respuesta(citas) });
-  assert.doesNotMatch(caja.innerHTML, /<img|onerror="/);
+  assert.doesNotMatch(caja.innerHTML, /<img|onerror="|<b>x<\/b>/);
   assert.doesNotMatch(zonaCitas.innerHTML, /<script|<b>/);
   assert.match(caja.innerHTML, /&lt;img/);
   assert.match(zonaCitas.innerHTML, /&lt;script&gt;/);
@@ -132,14 +131,13 @@ test("la página: carga informe.js y el contador, ya no trae porcentajes ni cita
 // ---- Modo "informe": ya hay uno publicado ----
 const DIA = 864e5;
 const TEMAS_INFORME = [
-  { tema: "Agua potable y cortes", total: 8, porcentaje: 62 },
-  { tema: "Calles y baches", total: 5, porcentaje: 38 },
-  { tema: "Basura y aseo", total: 0, porcentaje: 0 },
+  { tema: "Agua potable y cortes", porcentaje: 62 },
+  { tema: "Calles y baches", porcentaje: 38 },
 ];
 const INFORME = () => ({
   ok: true, modo: "informe", origen: "automatico", publicado: "2026-10-21T13:00:00.000Z",
-  desde: "2026-10-16T13:00:00.000Z", hasta: "2026-10-21T13:00:00.000Z", total: 13, temas: TEMAS_INFORME,
-  nuevas: 7, proximo: new Date(Date.now() + 2 * DIA).toISOString(), minimo: 10,
+  desde: "2026-10-16T13:00:00.000Z", hasta: "2026-10-21T13:00:00.000Z", temas: TEMAS_INFORME, sin_opiniones: ["Basura y aseo"],
+  proximo: new Date(Date.now() + 2 * DIA).toISOString(),
 });
 const mostrar = async (d) => (await correr({ api: () => respuesta(d) })).caja.innerHTML;
 
@@ -165,6 +163,7 @@ test("un informe de un solo día se lee 'el 26 oct', no 'del 26 oct al 26 oct'",
 });
 
 test("la página NUNCA dice cuántas opiniones hay: ni el total, ni por tema, ni cuántas llegaron, ni avisos de 'pocas'", async () => {
+  // Aunque el servidor mandara cantidades (ya no lo hace), la página no las dibuja.
   const poco = { tema: "Basura y aseo", total: 4, porcentaje: 100 };
   const casos = [
     DATOS,

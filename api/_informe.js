@@ -78,3 +78,32 @@ export function armarFila(origen, desde, hasta, porTema, total) {
   if (!suma) throw new Error("No hay opiniones: no se arma un informe vacío.");
   return { origen, periodo_desde: desde.toISOString(), periodo_hasta: hasta.toISOString(), total: suma, por_tema: temas };
 }
+
+// ---- Informe manual (desde /admin/) ----
+// El equipo elige dos días ("2026-10-10" a "2026-10-12", ambos incluidos). Los días son los de
+// Ecuador (UTC-5, sin horario de verano): el día empieza a las 05:00 UTC. Si "hasta" es hoy, el
+// corte es ahora. Devuelve { desde, hasta } (Date; el periodo es [desde, hasta)). Los mensajes de
+// error se le muestran tal cual a quien administra.
+export const MAX_DIAS_MANUAL = 31;
+const FECHA = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+function inicioDelDia(texto) {
+  const m = typeof texto === "string" ? FECHA.exec(texto) : null;
+  if (!m) return null;
+  const [y, mes, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const inicio = new Date(Date.UTC(y, mes - 1, d, 5));
+  const igual = inicio.getUTCFullYear() === y && inicio.getUTCMonth() === mes - 1 && inicio.getUTCDate() === d;
+  return igual ? inicio : null;
+}
+
+export function rangoManual(desdeTexto, hastaTexto, ahora) {
+  const desde = inicioDelDia(desdeTexto), ultimoDia = inicioDelDia(hastaTexto);
+  if (!desde) throw new Error("La fecha «Desde» no es válida (usa año-mes-día).");
+  if (!ultimoDia) throw new Error("La fecha «Hasta» no es válida (usa año-mes-día).");
+  if (desde > ultimoDia) throw new Error("La fecha «Desde» no puede ser posterior a «Hasta».");
+  if (desde > ahora) throw new Error("La fecha «Desde» todavía no llega.");
+  if (ultimoDia > ahora) throw new Error("La fecha «Hasta» todavía no llega.");
+  const finDelDia = new Date(ultimoDia.getTime() + DIA);
+  if ((finDelDia - desde) / DIA > MAX_DIAS_MANUAL) throw new Error(`El periodo no puede pasar de ${MAX_DIAS_MANUAL} días.`);
+  return { desde, hasta: finDelDia < ahora ? finDelDia : ahora };
+}

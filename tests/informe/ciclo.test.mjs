@@ -1,7 +1,7 @@
 // El ciclo del informe: sale solo cada 5 días y, si llegaron pocas opiniones, se mantiene el anterior.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DIAS_ENTRE_INFORMES, MIN_OPINIONES, VENTANA_DIAS, desdeDelPeriodo, proximoInforme, tocaPublicar, decidir, armarFila } from "../../api/_informe.js";
+import { DIAS_ENTRE_INFORMES, MIN_OPINIONES, VENTANA_DIAS, desdeDelPeriodo, proximoInforme, tocaPublicar, decidir, armarFila, rangoManual } from "../../api/_informe.js";
 
 const DIA = 864e5;
 const AHORA = new Date("2026-10-26T13:00:00.000Z");
@@ -71,4 +71,38 @@ test("armarFila: lo que se guarda en informe_publico (conteos por tema, porcenta
 test("armarFila: no arma un informe vacío ni con un origen raro", () => {
   assert.throws(() => armarFila("manual", AHORA, AHORA, {}, 0), /vac/i);
   assert.throws(() => armarFila("magia", AHORA, AHORA, { "Basura y aseo": 3 }, 3), /origen/i);
+});
+
+// ---- Rango de fechas del informe manual (días de Ecuador, UTC-5 sin horario de verano) ----
+const HOY = new Date("2026-10-26T15:30:00.000Z"); // 10:30 del 26 de octubre en Ecuador
+
+test("rangoManual: los días son de Ecuador: del 00:00 del primer día al 00:00 del día siguiente al último", () => {
+  const r = rangoManual("2026-10-10", "2026-10-12", HOY);
+  assert.equal(r.desde.toISOString(), "2026-10-10T05:00:00.000Z");
+  assert.equal(r.hasta.toISOString(), "2026-10-13T05:00:00.000Z");
+});
+
+test("rangoManual: si 'hasta' es hoy, el corte es ahora (no se cuentan opiniones del futuro)", () => {
+  const r = rangoManual("2026-10-20", "2026-10-26", HOY);
+  assert.equal(r.hasta.toISOString(), HOY.toISOString());
+  const unDia = rangoManual("2026-10-26", "2026-10-26", HOY);
+  assert.equal(unDia.desde.toISOString(), "2026-10-26T05:00:00.000Z");
+  assert.equal(unDia.hasta.toISOString(), HOY.toISOString());
+});
+
+test("rangoManual: pasada la medianoche de Ecuador ya es otro día (04:59 UTC todavía es el día anterior)", () => {
+  const r = rangoManual("2026-10-25", "2026-10-25", new Date("2026-10-26T04:59:00.000Z"));
+  assert.equal(r.hasta.toISOString(), "2026-10-26T04:59:00.000Z"); // todavía es 25 en Ecuador: corta ahora
+  assert.throws(() => rangoManual("2026-10-26", "2026-10-26", new Date("2026-10-26T04:59:00.000Z")), /todavía no/i);
+});
+
+test("rangoManual: rechaza lo que no es una fecha real, fechas futuras, al revés o más de 31 días", () => {
+  for (const [d, h] of [["2026-10-1", "2026-10-12"], ["10/10/2026", "2026-10-12"], ["2026-02-30", "2026-03-02"], ["2026-13-01", "2026-13-02"], ["", "2026-10-12"], [null, "2026-10-12"], [20261010, "2026-10-12"], ["2026-10-10", undefined]]) {
+    assert.throws(() => rangoManual(d, h, HOY), /fecha/i, `${d} → ${h}`);
+  }
+  assert.throws(() => rangoManual("2026-10-12", "2026-10-10", HOY), /posterior|antes/i);
+  assert.throws(() => rangoManual("2026-10-20", "2026-10-27", HOY), /todavía no/i);
+  assert.throws(() => rangoManual("2026-10-27", "2026-10-28", HOY), /todavía no/i);
+  assert.throws(() => rangoManual("2026-09-01", "2026-10-10", HOY), /31 días/);
+  assert.doesNotThrow(() => rangoManual("2026-09-10", "2026-10-10", HOY)); // exactamente 31 días
 });

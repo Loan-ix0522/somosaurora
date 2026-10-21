@@ -33,6 +33,21 @@ Postgres (Supabase). Todas las tablas con RLS activado.
 | por_sector       | jsonb       | conteos por sector |
 | resumen          | text null   | texto del informe |
 
+## Tabla `informe_publico` — informe ciudadano que ve el público (PERSISTE)
+Migración `0007`. Una fila por informe publicado; la web muestra el más reciente. Solo conteos.
+| Campo         | Tipo        | Notas |
+|---------------|-------------|-------|
+| id            | uuid PK     | `gen_random_uuid()` |
+| created_at    | timestamptz | cuándo se publicó (define cuál es «el más reciente») |
+| origen        | text        | `automatico` (cada 5 días) \| `manual` (desde el panel) |
+| periodo_desde | timestamptz | primera opinión posible del periodo |
+| periodo_hasta | timestamptz | corte: opiniones **hasta** esta hora (el siguiente periodo empieza aquí) |
+| total         | int         | opiniones contadas (> 0: no se publican informes vacíos) |
+| por_tema      | jsonb       | arreglo `[{ "tema": "Agua potable y cortes", "total": 8, "porcentaje": 47 }, ...]` |
+
+RLS: `SELECT` público; `DELETE` solo `is_admin()`; sin `INSERT`/`UPDATE` desde el navegador (escribe el servidor con la service role).
+Reglas: se publica solo con ≥ 10 opiniones nuevas y 5 días desde el corte anterior; el primero cuenta los últimos 30 días. No alimenta el top de `/api/featured` (eso es `weekly_reports`).
+
 ## Tabla `featured_opinions` — top semanal público (PERSISTE)
 | Campo          | Tipo        | Notas |
 |----------------|-------------|-------|
@@ -58,5 +73,5 @@ Postgres (Supabase). Todas las tablas con RLS activado.
 
 ## Retención
 - `submissions`: vida corta (una semana), se purga tras archivar el informe.
-- `weekly_reports` y `featured_opinions`: permanentes.
+- `weekly_reports`, `featured_opinions` e `informe_publico`: permanentes (el informe público solo guarda conteos).
 - Fotos en Storage: se borran al purgar la semana (las destacadas no muestran foto en v1).

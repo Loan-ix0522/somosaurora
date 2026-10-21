@@ -15,6 +15,7 @@ Clasificación de riesgo LOAN-IX: **HIGH** (formulario público + panel admin + 
 - **RLS activado en todas las tablas:**
   - `submissions`: sin acceso para `anon`. Solo admins (`is_admin()`). Inserción solo vía service role (Function).
   - `featured_opinions` / `weekly_reports`: `SELECT` público (anon); escritura solo admins.
+  - `informe_publico`: `SELECT` público (anon); `DELETE` solo admins; sin `INSERT`/`UPDATE` desde el navegador (solo el servidor).
   - `purga_log`: lectura solo admins.
 - La `service_role key` vive **solo** en variables de entorno de Vercel; nunca en el navegador ni en el repo.
 
@@ -51,12 +52,15 @@ Capas (ninguna es infalible; juntas suben mucho el costo):
 - No cuenta `/admin`, ni User-Agents de bots (además del bloqueo de `vercel.json`).
 - Riesgo aceptado: alguien con un navegador real puede inflar el conteo cambiando el código anónimo; es una estadística, no un control. Si pasa, poner un límite de tasa a `/api/track` en el Firewall de Vercel.
 
-## Informe en vivo (`/api/informe`)
-- `GET` público, sin `?consulta` (cada consulta distinta saltaría la caché de Vercel y golpearía la base). Devuelve solo **conteos por tema y fechas**: ningún texto, nombre, celular, foto ni IP.
-- `submissions` no se puede leer en público, así que el servidor la consulta con la service role pero únicamente pide el **conteo** (`HEAD` + `Prefer: count=exact`, 1 por tema + 1 del total): ninguna fila sale de la base.
-- Ventana de los últimos 30 días (lo que conserva `/api/purge`). Los temas salen de una lista fija (`api/_informe.js`); una prueba vigila que sea la misma que acepta `api/submit.js`. Lo que no coincide va a «Otros temas».
-- Caché: `s-maxage=300` (la base recibe como mucho 9 preguntas cada 5 min por región) y `max-age=60` en el navegador. Los errores responden 502 genérico, sin detalles, y `no-store`.
-- Riesgo aceptado: si el equipo usa «Archivar y limpiar» a mano, esas opiniones salen del conteo en vivo (el informe cuenta lo que hay guardado). Con la purga automática de 30 días no pasa.
+## Informe público (`/api/informe`, `/api/informe-auto`, `/api/informe-admin`)
+- **Qué se publica:** solo **conteos por tema y fechas**; ningún texto, nombre, celular, foto ni IP. Cada informe es una fila de `informe_publico` (migración 0007: `origen`, `periodo_desde`, `periodo_hasta`, `total`, `por_tema`).
+- **`informe_publico` (RLS activo):** `SELECT` público (son solo conteos); `DELETE` solo `is_admin()` (retirar un informe); **nadie inserta ni actualiza desde el navegador, ni siquiera un admin** (no hay política y además se quitan los permisos de tabla). Solo escribe el servidor con la service role, que es quien cuenta las opiniones: un porcentaje nunca llega desde el navegador.
+- **`GET /api/informe` (público):** sin `?consulta` (cada consulta distinta saltaría la caché de Vercel y golpearía la base → 400). Devuelve el último informe publicado (solo tema, total y porcentaje; sin ids) más cuántas opiniones llegaron desde su corte. Si aún no hay informe, o falta la migración, devuelve el conteo en vivo de los últimos 30 días.
+- **Cómo se cuenta:** `submissions` no se puede leer en público, así que el servidor la consulta con la service role pero únicamente pide el **conteo** (`HEAD` + `Prefer: count=exact`, 1 por tema + 1 del total): ninguna fila sale de la base. Los temas salen de una lista fija (`api/_informe.js`); una prueba vigila que sea la misma que acepta `api/submit.js`. Lo que no coincide va a «Otros temas».
+- **Caché:** `s-maxage=300` y `max-age=60`. Los errores responden 502 genérico, sin detalles, y `no-store`.
+- **`GET /api/informe-auto` (Vercel Cron, 07:30 UTC):** exige `Authorization: Bearer CRON_SECRET` (≥ 16 caracteres, comparación en tiempo constante); sin secreto responde 503 y no hace nada. Publica solo si pasaron 5 días **y** hay al menos 10 opiniones nuevas; si no, no cambia nada y el informe vigente se mantiene. `?dry=1` calcula sin guardar. Los errores salen genéricos; el detalle va solo a los registros del servidor.
+- **`POST /api/informe-admin` (panel):** solo desde el mismo sitio (Origin o `Sec-Fetch-Site: same-origin`); cuerpo JSON ≤ 1 KB con exactamente `accion` (`calcular` | `publicar`), `desde` y `hasta`. Exige `Authorization: Bearer <sesión>` y la verifica en cada llamada con `rpc/is_admin` usando el token de esa persona (no hay lista de admins en el servidor). El rango se valida (fechas reales, `desde` ≤ `hasta`, ni en el futuro, máximo 31 días) y no se publica un informe vacío.
+- **Riesgos aceptados:** (1) si el equipo usa «Archivar y limpiar» a mano, esas opiniones salen del conteo en vivo que se muestra mientras no haya informe publicado (los informes ya publicados no cambian). (2) Un informe manual de fechas antiguas reinicia el reloj de 5 días a partir del final de ese rango. (3) Pulsar «Publicar» dos veces seguidas puede dejar dos filas iguales; el panel deshabilita el botón mientras trabaja y se puede retirar la repetida.
 
 ## Storage
 - Bucket `evidencias` **privado**. Subidas solo vía service role. Las fotos no se exponen públicamente; el admin las abre con URL firmada de 120 s.

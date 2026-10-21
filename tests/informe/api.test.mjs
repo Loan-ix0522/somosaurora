@@ -1,5 +1,6 @@
-// /api/informe: los porcentajes del informe ciudadano salen de las opiniones reales de los últimos 30 días.
-// Solo devuelve conteos (nada personal) y se arma con la service role porque la tabla no se puede leer en público.
+// /api/informe, modo "en-curso" (todavía no hay ningún informe publicado): los porcentajes salen de las
+// opiniones reales de los últimos 30 días. Solo devuelve conteos (nada personal) y se arma con la service
+// role porque la tabla no se puede leer en público. El modo con informe publicado está en informe-publicado.test.mjs.
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -10,11 +11,13 @@ const SITIO = "https://www.laauroraescucha.com";
 let llamadas, fetchOriginal, envOriginal, base;
 
 // Un "Supabase" mínimo: responde el conteo de cada tema (o el total si no se filtra por tema).
+// La lista de informes publicados viene vacía: es el caso "todavía no hay ninguno".
 function supabaseFalso(porTema) {
   const total = Object.values(porTema).reduce((a, b) => a + b, 0);
   return async (url, init) => {
     llamadas.push({ url: String(url), init });
     const u = new URL(url);
+    if (u.pathname.endsWith("/informe_publico")) return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
     const tema = u.searchParams.get("tema");
     const n = tema ? (porTema[tema.replace(/^eq\./, "")] ?? 0) : total;
     return new Response(null, { status: 200, headers: { "content-range": n ? `0-0/${n}` : "*/0" } });
@@ -51,8 +54,9 @@ test("reparte las opiniones reales en porcentajes que suman 100, de mayor a meno
 test("pregunta a la base con la service role: un conteo por tema y uno del total, solo de los últimos 30 días", async () => {
   const antes = Date.now();
   await handler(pedir());
-  assert.equal(llamadas.length, TEMAS.length + 1);
-  for (const { url, init } of llamadas) {
+  const conteos = llamadas.filter((l) => new URL(l.url).pathname.endsWith("/submissions"));
+  assert.equal(conteos.length, TEMAS.length + 1);
+  for (const { url, init } of conteos) {
     assert.equal(init.method, "HEAD");
     assert.equal(init.headers.apikey, "clave-servicio");
     assert.equal(init.headers.Authorization, "Bearer clave-servicio");
@@ -62,7 +66,7 @@ test("pregunta a la base con la service role: un conteo por tema y uno del total
     const desde = new Date(u.searchParams.get("created_at").replace(/^gte\./, "")).getTime();
     assert.ok(Math.abs((antes - desde) - VENTANA_DIAS * 864e5) < 60_000, "la ventana es de 30 días");
   }
-  const temas = llamadas.map((l) => new URL(l.url).searchParams.get("tema")).filter(Boolean).map((t) => t.replace(/^eq\./, ""));
+  const temas = conteos.map((l) => new URL(l.url).searchParams.get("tema")).filter(Boolean).map((t) => t.replace(/^eq\./, ""));
   assert.deepEqual(temas.sort(), [...TEMAS].sort());
 });
 
@@ -88,7 +92,8 @@ test("sin opiniones: total 0, todos en 0 % y nada de errores", async () => {
 
 test("la respuesta solo lleva conteos y fechas: nada personal", async () => {
   const d = await (await handler(pedir())).json();
-  assert.deepEqual(Object.keys(d).sort(), ["actualizado", "desde", "ok", "temas", "total", "ventana_dias"]);
+  assert.equal(d.modo, "en-curso");
+  assert.deepEqual(Object.keys(d).sort(), ["actualizado", "desde", "modo", "ok", "temas", "total", "ventana_dias"]);
   assert.deepEqual(Object.keys(d.temas[0]).sort(), ["porcentaje", "tema", "total"]);
 });
 
@@ -118,8 +123,8 @@ test("acepta los nombres de variables que quedaron puestos en Vercel", async () 
   process.env.ProjectURL = "https://otro.supabase.co"; process.env.service_role = "otra-clave";
   const r = await handler(pedir());
   assert.equal(r.status, 200);
-  assert.ok(llamadas[0].url.startsWith("https://otro.supabase.co/rest/v1/submissions"));
-  assert.equal(llamadas[0].init.headers.apikey, "otra-clave");
+  assert.ok(llamadas.length > 0 && llamadas.every((l) => l.url.startsWith("https://otro.supabase.co/rest/v1/")));
+  assert.ok(llamadas.every((l) => l.init.headers.apikey === "otra-clave"));
 });
 
 test("si la base falla (error, corte o respuesta rara) responde 502 genérico y no se guarda en caché", async () => {

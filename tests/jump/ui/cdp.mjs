@@ -4,6 +4,7 @@
 //
 // Grupos: los de ESCENARIOS (abajo). Imprime un JSON { resultados: {escenario: "ok" | detalle}, consola: [...] }
 // y sale con código 1 si algo falla. Necesita Chrome y red (supabase-js viene de jsDelivr, como en producción).
+// Escritorio: 1366 px de ancho (JUMP_UI_ANCHO=1440 lo cambia); móvil: 390 px. Los puertos son fijos: una corrida a la vez.
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,7 +17,7 @@ const args = process.argv.slice(2);
 const grupo = args[0] || "ingreso";
 const movil = args.includes("--movil");
 const fotos = args.includes("--fotos") ? args[args.indexOf("--fotos") + 1] : null;
-const [W, H] = movil ? [390, 844] : [1366, 900];
+const [W, H] = movil ? [390, 844] : [Number(process.env.JUMP_UI_ANCHO) || 1366, 900];
 const PUERTO_CDP = 9341;
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
 const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -91,6 +92,8 @@ const texto = (sel) => ev(`document.querySelector(${JSON.stringify(sel)})?.textC
 async function foto(nombre) {
   if (!fotos) return;
   mkdirSync(fotos, { recursive: true });
+  // Diálogos y avisos entran con una animación corta: sin esperarla la captura sale a medio aparecer (translúcida).
+  await ev(`Promise.race([Promise.all(document.getAnimations().filter((a) => a.effect?.getComputedTiming().iterations !== Infinity).map((a) => a.finished.catch(() => {}))), new Promise((r) => setTimeout(r, 800))]).then(() => true)`);
   const r = await send("Page.captureScreenshot", { format: "png" });
   writeFileSync(join(fotos, `${movil ? "movil" : "escritorio"}-${nombre}.png`), Buffer.from(r.result.data, "base64"));
 }
@@ -555,6 +558,9 @@ const ESCENARIOS = {
       const av = await sql("select tipo from public.jump_avisos where mentoria_id = $1 or clase_id = $2 order by tipo", [m.id, vivo.clase_id]);
       if (av.rows.map((r) => r.tipo).join(",") !== "invitacion,mentoria") return "avisos: " + av.rows.map((r) => r.tipo).join(",");
       const visto = await restComo(X.E, `jump_mentorias?id=eq.${m.id}&select=id`);
+      // El aviso mide lo que mide su texto (en el celular llegó a salir en cuatro líneas, estrechado a media pantalla).
+      const altoAviso = await ev(`document.querySelector("#toast.show")?.getBoundingClientRect().height ?? null`);
+      if (altoAviso === null || altoAviso > 90) return "aviso de la mentoría publicada: alto " + altoAviso;
       await foto("a-mentorias");
       return visto.length === 1 || "E no la ve";
     },
@@ -766,6 +772,8 @@ const ESCENARIOS = {
       await esperar(`!!document.querySelector('${enPost(id, '[data-act="muroOcultar"]')}')`);
       await clic(enPost(id, '[data-act="muroOcultar"]'));
       await esperar(`document.querySelector('${enPost(id)}')?.textContent.includes("Oculto por el equipo")`);
+      // Oculta y sin comentarios: no queda un bloque de comentarios vacío (una raya y un hueco al pie de la tarjeta).
+      if (await ev(`!!document.querySelector('${enPost(id, ".post-coms")}')`)) return "la publicación oculta dibuja un bloque de comentarios vacío";
       await foto("muro-oculto-equipo");
       const f = await fila("select oculto_en, oculto_por from public.jump_posts where id = $1", [id]);
       if (!f.oculto_en || f.oculto_por !== X.A.id) return "en la base: " + JSON.stringify(f);

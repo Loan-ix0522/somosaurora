@@ -54,7 +54,9 @@ JUMP tiene su **propio proyecto de Supabase**, separado del de La Aurora Escucha
 
    Estas variables **no** tienen respaldo en las de La Aurora: si falta una, JUMP se niega a funcionar (así nunca cae en la base equivocada).
 
-2. **Paso obligatorio:** el navegador solo puede hablar con la base de JUMP si su dirección está en la política de seguridad (CSP). Abre `scripts/csp.mjs`, busca `JUMP_SUPABASE_HOST` y cambia `https://jump-supabase-pendiente.invalid` por tu Project URL. Luego, en una terminal dentro de la carpeta del proyecto:
+2. **La dirección de la base en la CSP.** El navegador solo puede hablar con la base de JUMP si su dirección está en la política de seguridad (CSP). **Ya está puesta** para el proyecto `https://yibbjwpitawmfnrnyjek.supabase.co` (`JUMP_SUPABASE_HOST` en `scripts/csp.mjs`, y `vercel.json` ya regenerado), así que con ese proyecto no tienes que hacer nada aquí.
+
+   Solo si algún día usas **otro** proyecto de Supabase: cambia `JUMP_SUPABASE_HOST` en `scripts/csp.mjs` por su Project URL y, en una terminal dentro de la carpeta del proyecto:
 
    ```bash
    node scripts/csp.mjs
@@ -62,7 +64,7 @@ JUMP tiene su **propio proyecto de Supabase**, separado del de La Aurora Escucha
 
    Eso regenera `vercel.json`. Comprueba con `node scripts/csp.mjs --check` (debe decir «CSP al día.»), sube los cambios a GitHub y haz **Redeploy** en Vercel.
 
-   Mientras no hagas este paso, la pantalla de entrada carga pero no puede conectarse a ninguna base.
+   Si esa dirección no coincide con tu proyecto, la pantalla de entrada carga pero no puede conectarse a ninguna base.
 
 ## 5. Entrar y cargar los datos de ejemplo
 

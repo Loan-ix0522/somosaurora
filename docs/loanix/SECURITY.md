@@ -120,7 +120,7 @@ Las pruebas unitarias corren contra un simulador de Supabase con Postgres real (
 - **Dirección de Zoom en Ajustes.** `Ajustes → Conectar Zoom` hace `location.assign()` a la URL que devuelve `/api/jump-admin`; solo la puede pedir un admin activo del mismo origen y el servidor la arma sobre `https://zoom.us/oauth/authorize`. No se re-valida en el navegador. Si se quiere una capa más: comprobar ese prefijo antes de navegar.
 - **Intentos de clave.** Los limita Supabase Auth por IP; no hay CAPTCHA. Si aparece fuerza bruta: Supabase Auth → Attack Protection.
 - **Datos de ejemplo y reales conviven** en el mismo proyecto (cada fila de ejemplo está marcada `es_ejemplo` y el panel muestra una franja mientras existan). Antes de cargar datos reales: borrar los ejemplos (la guía lo pide).
-- **Hasta que se escriba la URL del proyecto de JUMP** en `scripts/csp.mjs` (`JUMP_SUPABASE_HOST`, hoy `https://jump-supabase-pendiente.invalid`), la CSP de `/jump` no deja hablar con ninguna base: falla cerrado. Es un paso obligatorio de la guía de puesta en marcha.
+- **La CSP de `/jump` solo deja hablar con la base de JUMP** (`JUMP_SUPABASE_HOST` en `scripts/csp.mjs`, hoy `https://yibbjwpitawmfnrnyjek.supabase.co`, el proyecto creado el 2026-10-21). Si esa dirección no coincide con el proyecto real, no deja hablar con ninguna base: falla cerrado. Si se cambia de proyecto, hay que editarla y correr `node scripts/csp.mjs`.
 - **Aviso de «hecho» en pantalla.** Es cosmético (el aviso muestra siempre el mismo ícono, también para rechazos); no afecta la seguridad.
 
 ## Pendiente / riesgos aceptados

@@ -26,9 +26,9 @@ const JUMP_PAGES = ["jump/comunidad/index.html", "jump/comunidad/privacidad.html
 // Videos de las mentorías: solo los reproductores sin cookies de YouTube y el de Vimeo.
 const VIDEO_FRAMES = "https://www.youtube-nocookie.com https://player.vimeo.com";
 const SUPABASE_HOST = "https://jdterctcniotbipgwcdv.supabase.co"; // La Aurora Escucha (solo el panel /admin)
-// Proyecto de Supabase PROPIO de JUMP. ANTES DE LANZAR: poner aquí su "Project URL" (Settings → API) y correr este script.
-// Mientras diga ".invalid" (un dominio que por norma nunca resuelve), la Comunidad JUMP no puede hablar con ninguna base.
-const JUMP_SUPABASE_HOST = "https://jump-supabase-pendiente.invalid";
+// Proyecto de Supabase PROPIO de JUMP (su "Project URL", Settings → API). Si algún día cambia, editarlo aquí y correr este script.
+// Un dominio ".invalid" (que por norma nunca resuelve) dejaría a la Comunidad JUMP sin poder hablar con ninguna base.
+const JUMP_SUPABASE_HOST = "https://yibbjwpitawmfnrnyjek.supabase.co";
 const SUPABASE_JS = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js";
 
 function inlineHashes(files) {

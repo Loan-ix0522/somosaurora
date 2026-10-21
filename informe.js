@@ -1,7 +1,6 @@
 /* Informe ciudadano (informe-demo.html): dibuja lo que da /api/informe y los comentarios destacados que
-   publica el equipo (/api/featured).
-   · Modo "informe": el último informe publicado (cada 5 días solo, o el que prepara el equipo desde /admin/),
-     con las opiniones nuevas desde su corte y cuándo sale el próximo.
+   publica el equipo (/api/featured). Solo muestra el periodo y los porcentajes: nunca cuántas opiniones hay.
+   · Modo "informe": el último informe publicado (cada 5 días solo, o el que prepara el equipo desde /admin/).
    · Modo "en-curso": mientras no haya ninguno publicado, el conteo en vivo de los últimos 30 días.
    Si algo falla, la página lo dice y no se rompe. */
 (function () {
@@ -14,7 +13,6 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   }
-  function opiniones(n) { return n + (n === 1 ? ' opinión' : ' opiniones'); }
 
   // Fecha y hora de Ecuador (UTC-5, sin horario de verano), sin depender de la zona del aparato.
   var MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
@@ -36,7 +34,6 @@
     var tarjetas = con.map(function (t) {
       var p = Number(t.porcentaje) || 0;
       return '<div class="card"><div class="num">' + p + '%</div><b>' + esc(t.tema) + '</b>' +
-        '<span class="cant">' + opiniones(Number(t.total) || 0) + '</span>' +
         '<div class="bar" role="img" aria-label="' + p + ' por ciento"><i style="width:' + p + '%"></i></div></div>';
     }).join('');
     return '<div class="grid">' + tarjetas + '</div>' +
@@ -52,52 +49,32 @@
     return a.dia === b.dia ? 'el ' + esc(a.dia) : 'del ' + esc(a.dia) + ' al ' + esc(b.dia);
   }
 
+  // Une con « · » lo que haya (sin huecos si falta algún dato). La página solo dice de qué días es:
+  // nunca cuántas opiniones hay, ni por tema ni en total.
+  function linea(partes) {
+    var con = partes.filter(Boolean);
+    return con.length ? '<p class="meta">' + con.join(' · ') + '</p>' : '';
+  }
+
   // Conteo en vivo de los últimos 30 días (todavía no hay un informe publicado).
   function enCursoHtml(d) {
-    var total = Number(d.total) || 0;
     var desde = ecuador(d.desde), hasta = ecuador(d.actualizado);
-    var meta = '<p class="meta"><b>' + opiniones(total) + '</b>' +
-      (desde && hasta ? ' · del ' + esc(desde.dia) + ' al ' + esc(hasta.dia) : '') +
-      (hasta ? ' · actualizado el ' + esc(hasta.dia) + ' a las ' + esc(hasta.hora) : '') + '</p>';
+    var meta = linea([
+      desde && hasta ? 'Periodo: del ' + esc(desde.dia) + ' al ' + esc(hasta.dia) : '',
+      hasta ? 'actualizado el ' + esc(hasta.dia) + ' a las ' + esc(hasta.hora) : ''
+    ]);
     var nota = '<p class="aviso">Todavía no se ha publicado el primer informe. Mientras tanto, estos porcentajes se calculan con las opiniones de los últimos 30 días y se ponen al día solos. El informe oficial sale cada 5 días.</p>';
-    if (!total) {
+    if (!(Number(d.total) > 0)) {
       return meta + nota + '<p class="estado">Todavía no hay opiniones en este periodo. En cuanto la comunidad envíe las primeras, aparecerán aquí.</p>';
     }
-    return meta + nota +
-      (total < 20 ? '<p class="aviso">Todavía son pocas opiniones, así que los porcentajes pueden moverse bastante. Se irán afinando con cada opinión nueva.</p>' : '') +
-      tarjetasHtml(d.temas);
+    return meta + nota + tarjetasHtml(d.temas);
   }
 
-  // Lo que viene después del informe: cuántas opiniones han llegado desde su corte y cuándo sale el próximo.
-  function siguienteHtml(d) {
-    var min = Number(d.minimo) || 10, partes = [];
-    if (typeof d.nuevas === 'number' && isFinite(d.nuevas) && d.nuevas >= 0) {
-      partes.push(d.nuevas === 0 ? 'Todavía no han llegado opiniones nuevas desde este informe.'
-        : 'Desde este informe ' + (d.nuevas === 1 ? 'ha llegado 1 opinión nueva' : 'han llegado ' + d.nuevas + ' opiniones nuevas') + '.');
-    }
-    var prox = ecuador(d.proximo);
-    if (prox) {
-      var tocaYa = Date.parse(d.proximo) <= Date.now();
-      var bastan = typeof d.nuevas === 'number' && d.nuevas >= min;
-      partes.push(!tocaYa
-        ? 'El próximo informe sale a partir del ' + esc(prox.dia) + ', si llegan al menos ' + min + ' opiniones nuevas; si no, este se mantiene.'
-        : bastan ? 'El próximo informe sale en la próxima revisión (se hace una vez al día).'
-        : 'El próximo informe saldrá en cuanto lleguen al menos ' + min + ' opiniones nuevas.');
-    }
-    return partes.length ? '<p class="siguiente">' + partes.join(' ') + '</p>' : '';
-  }
-
-  // El último informe publicado (automático cada 5 días, o el que prepara el equipo desde /admin/).
+  // El último informe publicado (automático cada 5 días, o el que prepara el equipo desde /admin/):
+  // solo el periodo y los porcentajes.
   function publicadoHtml(d) {
-    var total = Number(d.total) || 0;
-    var dias = periodo(d.desde, d.hasta), pub = ecuador(d.publicado);
-    var origen = d.origen === 'manual' ? 'preparado por el equipo' : 'informe automático';
-    var meta = '<p class="meta"><b>' + opiniones(total) + '</b>' + (dias ? ' · ' + dias : '') +
-      (pub ? ' · publicado el ' + esc(pub.dia) + ' (' + origen + ')' : '') + '</p>';
-    var min = Number(d.minimo) || 10;
-    return meta +
-      (total < min ? '<p class="aviso">Este informe se basa en pocas opiniones, así que los porcentajes son solo una referencia.</p>' : '') +
-      tarjetasHtml(d.temas) + siguienteHtml(d);
+    var dias = periodo(d.desde, d.hasta);
+    return linea([dias ? 'Periodo: ' + dias : '']) + tarjetasHtml(d.temas);
   }
 
   function informeHtml(d) {

@@ -43,13 +43,13 @@ async function correr({ api = () => respuesta(DATOS), citas = () => respuesta(CI
   return { caja, zonaCitas, pedidos };
 }
 
-test("pide /api/informe y dibuja una tarjeta por tema con opiniones: porcentaje, cantidad y barra", async () => {
+test("pide /api/informe y dibuja una tarjeta por tema con opiniones: porcentaje y barra", async () => {
   const { caja, pedidos } = await correr();
   assert.ok(pedidos.includes("/api/informe"));
   const h = caja.innerHTML;
-  assert.match(h, /56%[\s\S]*Tráfico y movilidad[\s\S]*32 opiniones/);
-  assert.match(h, /25%[\s\S]*Basura y aseo[\s\S]*14 opiniones/);
-  assert.match(h, /19%[\s\S]*Alumbrado público[\s\S]*11 opiniones/);
+  assert.match(h, /56%[\s\S]*Tráfico y movilidad/);
+  assert.match(h, /25%[\s\S]*Basura y aseo/);
+  assert.match(h, /19%[\s\S]*Alumbrado público/);
   assert.match(h, /style="width:56%"/);
   assert.ok(h.indexOf("Tráfico y movilidad") < h.indexOf("Basura y aseo"), "mantiene el orden de mayor a menor");
 });
@@ -60,24 +60,10 @@ test("los temas sin opiniones no llevan tarjeta: se nombran aparte", async () =>
   assert.match(caja.innerHTML, /Sin opiniones por ahora:[^<]*Agua potable y cortes[^<]*Calles y baches/);
 });
 
-test("dice cuántas opiniones son, de qué días y cuándo se actualizó (hora de Ecuador)", async () => {
+test("conteo en vivo: dice de qué días es y cuándo se actualizó (hora de Ecuador)", async () => {
   const { caja } = await correr();
-  assert.match(caja.innerHTML, /57 opiniones/);
-  assert.match(caja.innerHTML, /del 21 sep al 21 oct/);
+  assert.match(caja.innerHTML, /Periodo: del 21 sep al 21 oct/);
   assert.match(caja.innerHTML, /actualizado el 21 oct a las 08:14/);
-});
-
-test("con pocas opiniones avisa que los porcentajes se irán afinando; con 20 o más no", async () => {
-  const pocas = { ...DATOS, total: 4, temas: [{ tema: "Basura y aseo", total: 4, porcentaje: 100 }] };
-  assert.match((await correr({ api: () => respuesta(pocas) })).caja.innerHTML, /pocas opiniones/i);
-  assert.doesNotMatch((await correr()).caja.innerHTML, /pocas opiniones/i);
-});
-
-test("una sola opinión se lee en singular", async () => {
-  const una = { ...DATOS, total: 1, temas: [{ tema: "Basura y aseo", total: 1, porcentaje: 100 }] };
-  const h = (await correr({ api: () => respuesta(una) })).caja.innerHTML;
-  assert.match(h, /1 opinión(?!es)/);
-  assert.doesNotMatch(h, /1 opiniones/);
 });
 
 test("sin opiniones: explica que aún no hay y no dibuja tarjetas", async () => {
@@ -157,78 +143,54 @@ const INFORME = () => ({
 });
 const mostrar = async (d) => (await correr({ api: () => respuesta(d) })).caja.innerHTML;
 
-test("informe publicado: dibuja sus porcentajes y dice de qué días es, cuándo se publicó y que fue automático", async () => {
+test("informe publicado: dibuja sus porcentajes y solo dice de qué días es", async () => {
   const h = await mostrar(INFORME());
-  assert.match(h, /62%[\s\S]*Agua potable y cortes[\s\S]*8 opiniones/);
-  assert.match(h, /38%[\s\S]*Calles y baches[\s\S]*5 opiniones/);
-  assert.match(h, /13 opiniones/);
-  assert.match(h, /del 16 oct al 21 oct/);
-  assert.match(h, /publicado el 21 oct/);
-  assert.match(h, /informe automático/i);
+  assert.match(h, /62%[\s\S]*Agua potable y cortes/);
+  assert.match(h, /38%[\s\S]*Calles y baches/);
+  assert.match(h, /Periodo: del 16 oct al 21 oct/);
   assert.match(h, /Sin opiniones por ahora:[^<]*Basura y aseo/);
+  assert.doesNotMatch(h, /publicado el|informe automático|preparado por el equipo/i, "ni cuándo ni quién lo publicó");
 });
 
-test("informe manual: el último día incluido es el día anterior al corte (el corte es la medianoche de Ecuador) y dice que lo preparó el equipo", async () => {
+test("informe manual: el último día incluido es el día anterior al corte (el corte es la medianoche de Ecuador)", async () => {
   const h = await mostrar({ ...INFORME(), origen: "manual", desde: "2026-10-10T05:00:00.000Z", hasta: "2026-10-12T05:00:00.000Z" });
   assert.match(h, /del 10 oct al 11 oct/);
   assert.doesNotMatch(h, /al 12 oct/);
-  assert.match(h, /preparado por el equipo/i);
-  assert.doesNotMatch(h, /informe automático/i);
 });
 
 test("un informe de un solo día se lee 'el 26 oct', no 'del 26 oct al 26 oct'", async () => {
   const h = await mostrar({ ...INFORME(), desde: "2026-10-26T05:00:00.000Z", hasta: "2026-10-27T05:00:00.000Z" });
-  assert.match(h, /el 26 oct/);
+  assert.match(h, /Periodo: el 26 oct/);
   assert.doesNotMatch(h, /al 26 oct/);
 });
 
-test("cuenta las opiniones nuevas desde el informe y cuándo sale el próximo (si llegan pocas, este se mantiene)", async () => {
-  const d = INFORME();
-  const h = await mostrar(d);
-  assert.match(h, /han llegado 7 opiniones nuevas/);
-  const dia = new Date(Date.parse(d.proximo) - 5 * 3600e3);
-  assert.match(h, new RegExp("a partir del " + dia.getUTCDate() + " "));
-  assert.match(h, /al menos 10 opiniones nuevas/);
-  assert.match(h, /este se mantiene/);
+test("la página NUNCA dice cuántas opiniones hay: ni el total, ni por tema, ni cuántas llegaron, ni avisos de 'pocas'", async () => {
+  const poco = { tema: "Basura y aseo", total: 4, porcentaje: 100 };
+  const casos = [
+    DATOS,
+    { ...DATOS, total: 4, temas: [poco] },
+    { ...DATOS, total: 1, temas: [{ ...poco, total: 1 }] },
+    INFORME(),
+    { ...INFORME(), total: 9, temas: [poco] },
+    { ...INFORME(), total: 1, temas: [{ ...poco, total: 1 }] },
+    { ...INFORME(), nuevas: 0 }, { ...INFORME(), nuevas: 1 }, { ...INFORME(), nuevas: 12 },
+    { ...INFORME(), proximo: new Date(Date.now() - DIA).toISOString(), nuevas: 3 },
+    { ...INFORME(), proximo: new Date(Date.now() - DIA).toISOString(), nuevas: 12 },
+  ];
+  for (const d of casos) {
+    const h = await mostrar(d);
+    assert.match(h, /class="num"/, "sí muestra los porcentajes");
+    assert.doesNotMatch(h, /\d+\s+opini[oó]n/i, "ninguna cantidad de opiniones");
+    assert.doesNotMatch(h, /class="cant"/);
+    assert.doesNotMatch(h, /pocas opiniones|referencia|afinando|moverse|nuevas|próximo|al menos|se mantiene|<b>\d/i);
+  }
 });
 
-test("opiniones nuevas: 0, 1 y sin dato se leen bien", async () => {
-  assert.match(await mostrar({ ...INFORME(), nuevas: 0 }), /Todavía no han llegado opiniones nuevas/);
-  const una = await mostrar({ ...INFORME(), nuevas: 1 });
-  assert.match(una, /ha llegado 1 opinión nueva/);
-  assert.doesNotMatch(una, /1 opiniones/);
-  const sin = { ...INFORME() }; delete sin.nuevas;
-  const h = await mostrar(sin);
-  assert.doesNotMatch(h, /han llegado|ha llegado|undefined|NaN/);
-  assert.match(h, /próximo informe/i);
-});
-
-test("si ya pasó la fecha del próximo y faltan opiniones, dice que sale en cuanto lleguen suficientes", async () => {
-  const h = await mostrar({ ...INFORME(), proximo: new Date(Date.now() - DIA).toISOString(), nuevas: 3 });
-  assert.match(h, /en cuanto lleguen al menos 10 opiniones nuevas/);
-  assert.doesNotMatch(h, /a partir del/);
-});
-
-test("si ya tocaba y ya llegaron suficientes, dice que sale en la próxima revisión (no que esperen a que lleguen)", async () => {
-  const h = await mostrar({ ...INFORME(), proximo: new Date(Date.now() - DIA).toISOString(), nuevas: 12 });
-  assert.match(h, /han llegado 12 opiniones nuevas/);
-  assert.match(h, /próximo informe sale en la próxima revisión/i);
-  assert.doesNotMatch(h, /en cuanto lleguen/);
-});
-
-test("un informe con pocas opiniones (manual) avisa que es solo una referencia; no promete que se vaya a mover", async () => {
-  const pocas = await mostrar({ ...INFORME(), total: 4, temas: [{ tema: "Basura y aseo", total: 4, porcentaje: 100 }] });
-  assert.match(pocas, /pocas opiniones[^<]*referencia/i);
-  assert.doesNotMatch(pocas, /afinando|moverse/i);
-  assert.doesNotMatch(await mostrar(INFORME()), /pocas opiniones/i);
-});
-
-test("conteo en vivo (todavía no hay informe): lo explica y dice que el oficial sale cada 5 días", async () => {
+test("conteo en vivo (todavía no hay informe): lo explica y dice que el oficial sale cada 5 días, sin cantidades", async () => {
   const h = await mostrar(DATOS);
   assert.match(h, /todavía no se ha publicado/i);
   assert.match(h, /cada 5 días/);
-  assert.match(h, /57 opiniones/);
-  assert.doesNotMatch(h, /próximo informe|preparado por el equipo/i);
+  assert.doesNotMatch(h, /57|\d+\s+opini[oó]n|próximo informe|preparado por el equipo|pocas/i);
 });
 
 test("un informe publicado con datos raros no rompe la página", async () => {

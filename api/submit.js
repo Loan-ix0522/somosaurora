@@ -18,7 +18,7 @@ export const config = { runtime: "edge" };
 
 // Versión de la política que se acepta al marcar la casilla = fecha de "Última
 // actualización" de politica-datos.html. Si cambias la política, cambia también esto.
-const CONSENT_VERSION = "2026-10-15";
+const CONSENT_VERSION = "2026-10-19";
 
 const TIPOS = ["Propuesta", "Queja o problema", "Otro tema"];
 const TEMAS = [
@@ -27,7 +27,7 @@ const TEMAS = [
 ];
 const SECTORES = [
   "Villa Club", "La Joya", "La Rioja", "Laguna Club", "Villa Italia", "La Piazza", "Avalon Plaza",
-  "Palmora Plaza", "Vermont Plaza", "Av. León Febres-Cordero", "Zona abierta o pueblo antiguo", "Otro sector",
+  "Palmora Plaza", "Vermont Plaza", "Villas del Rey", "Av. León Febres-Cordero", "Zona abierta o pueblo antiguo", "Otro sector",
 ];
 
 // Vercel rechaza cuerpos de más de 4,5 MB, así que la foto (que el navegador reduce

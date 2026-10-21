@@ -3,6 +3,8 @@
 // "evidencias", salvo las marcadas "en gestión" (excepción del punto 6 de la
 // Política de tratamiento de datos personales). Los informes semanales y las
 // opiniones destacadas (ya anónimas) no se tocan.
+// También borra la IP de las visitas con más de 30 días (contador de visitas, migración
+// 0006): la visita se conserva, sin IP. Si la 0006 no está aplicada, eso se salta.
 //
 // Seguridad: exige `Authorization: Bearer <CRON_SECRET>` (Vercel lo envía solo
 // cuando la variable CRON_SECRET existe en el proyecto). Sin secreto configurado
@@ -77,6 +79,17 @@ export default async function handler(request) {
     error = String((e && e.message) || e);
   }
 
+  // IP de las visitas con más de 30 días. Aparte: si falla (o falta la 0006), la limpieza de opiniones sigue valiendo.
+  let ips = null;
+  try {
+    const r = await fetch(`${SUPA_URL}/rest/v1/rpc/borrar_ip_visitas`, {
+      method: "POST",
+      headers: { ...H, "Content-Type": "application/json" },
+      body: "{}",
+    });
+    if (r.ok) ips = Number(await r.json()) || 0;
+  } catch {}
+
   // Bitácora (solo conteos). Si falla, no afecta a la limpieza.
   try {
     await fetch(`${SUPA_URL}/rest/v1/purga_log`, {
@@ -86,8 +99,8 @@ export default async function handler(request) {
     });
   } catch {}
 
-  console.log(JSON.stringify({ purga: { cutoff, opiniones, fotos, error } }));
-  return json({ ok: !error, cutoff, borradas: { opiniones, fotos }, error }, error ? 500 : 200);
+  console.log(JSON.stringify({ purga: { cutoff, opiniones, fotos, ips, error } }));
+  return json({ ok: !error, cutoff, borradas: { opiniones, fotos }, ips, error }, error ? 500 : 200);
 }
 
 async function contar(base, H, path) {

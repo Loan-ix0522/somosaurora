@@ -114,6 +114,7 @@ Las cuentas gratuitas de Zoom cortan las reuniones de más de **2 personas a los
 | La pantalla de entrada dice que no se puede conectar | Faltan las variables `JUMP_*` en Vercel, o no hiciste el Redeploy (paso 4). |
 | La entrada carga pero «Entrar» no hace nada y la consola del navegador habla de «Content Security Policy» | Falta cambiar `JUMP_SUPABASE_HOST` en `scripts/csp.mjs` y regenerar `vercel.json` (paso 4.2). |
 | «Usuario o clave incorrecta.» con el admin recién creado | Revisa que marcaste **Auto Confirm User** y que corriste el `insert` del paso 3 con el mismo usuario del correo. |
+| Al crear una cuenta, Supabase responde `email_address_invalid` | Cada persona tiene un correo interno (`…@equipo.laauroraescucha.com` para el equipo y `…@cuentas.laauroraescucha.com` para emprendedores) que nunca recibe mensajes. Si el Auth de Supabase llegara a rechazar esos dominios, avísale a quien mantiene el sitio: hay que cambiar el dominio en `jump/comunidad/js/cedula.js`. (No se pudo probar contra un Supabase real, solo contra el simulado.) |
 | Una persona nueva dice que su cuenta está suspendida | Está suspendida en **Emprendedores**; reactívala desde ahí. |
 | Zoom: «No se pudo conectar Zoom. Intenta de nuevo.» | Revisa que la OAuth Redirect URL de la app de Zoom sea idéntica a `…/api/jump-zoom-callback` y que `JUMP_PUBLIC_URL` no tenga barra al final. |
 | Las pruebas de seguridad | `docs/loanix/SECURITY.md`, sección «Comunidad JUMP», lista cada caso de abuso con su prueba. |

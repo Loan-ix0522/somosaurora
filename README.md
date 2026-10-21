@@ -9,10 +9,12 @@ Plataforma de escucha ciudadana de **La Aurora (Daule)**. Landing pública + for
 ## Estructura
 ```
 index.html            Landing pública (formulario + top en vivo)
-informe-demo.html     Demo del informe
+informe-demo.html     Informe ciudadano en vivo (porcentajes por tema de los últimos 30 días; lo dibuja informe.js)
+informe.js            Pide /api/informe y /api/featured y dibuja la página del informe
 admin/index.html      Panel privado (login, tabla Excel, informe, limpieza)
 api/submit.js         GET: desafío anti-bot · POST: guarda opiniones (usa service_role, server-side)
 api/featured.js       GET:  top público del último informe
+api/informe.js        GET:  porcentajes por tema de las opiniones de los últimos 30 días (solo conteos; service_role, server-side)
 api/config.js         GET:  URL + anon key para el panel
 api/purge.js          GET:  limpieza automática de 30 días (la llama Vercel Cron)
 api/blocked.js        GET:  destino (403) de los clientes automatizados bloqueados

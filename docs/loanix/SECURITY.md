@@ -51,6 +51,13 @@ Capas (ninguna es infalible; juntas suben mucho el costo):
 - No cuenta `/admin`, ni User-Agents de bots (además del bloqueo de `vercel.json`).
 - Riesgo aceptado: alguien con un navegador real puede inflar el conteo cambiando el código anónimo; es una estadística, no un control. Si pasa, poner un límite de tasa a `/api/track` en el Firewall de Vercel.
 
+## Informe en vivo (`/api/informe`)
+- `GET` público, sin `?consulta` (cada consulta distinta saltaría la caché de Vercel y golpearía la base). Devuelve solo **conteos por tema y fechas**: ningún texto, nombre, celular, foto ni IP.
+- `submissions` no se puede leer en público, así que el servidor la consulta con la service role pero únicamente pide el **conteo** (`HEAD` + `Prefer: count=exact`, 1 por tema + 1 del total): ninguna fila sale de la base.
+- Ventana de los últimos 30 días (lo que conserva `/api/purge`). Los temas salen de una lista fija (`api/_informe.js`); una prueba vigila que sea la misma que acepta `api/submit.js`. Lo que no coincide va a «Otros temas».
+- Caché: `s-maxage=300` (la base recibe como mucho 9 preguntas cada 5 min por región) y `max-age=60` en el navegador. Los errores responden 502 genérico, sin detalles, y `no-store`.
+- Riesgo aceptado: si el equipo usa «Archivar y limpiar» a mano, esas opiniones salen del conteo en vivo (el informe cuenta lo que hay guardado). Con la purga automática de 30 días no pasa.
+
 ## Storage
 - Bucket `evidencias` **privado**. Subidas solo vía service role. Las fotos no se exponen públicamente; el admin las abre con URL firmada de 120 s.
 - Al purgar (manual o automática) se borran también los objetos de Storage de esos envíos.

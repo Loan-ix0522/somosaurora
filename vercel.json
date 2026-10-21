@@ -4,6 +4,10 @@
     {
       "path": "/api/purge",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/informe-auto",
+      "schedule": "30 7 * * *"
     }
   ],
   "redirects": [

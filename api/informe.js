@@ -3,8 +3,8 @@
 //
 // · Si ya hay un informe publicado (automático cada 5 días o manual desde /admin/), devuelve el
 //   más reciente, más cuántas opiniones han llegado desde su corte (modo "informe").
-// · Si todavía no hay ninguno, la tabla no existe (migración 0007 sin aplicar) o no se pudo
-//   leer, cuenta en vivo los últimos 30 días (modo "en-curso"): la página nunca queda vacía.
+// · Si todavía no hay ninguno o la tabla no existe (migración 0007 sin aplicar), cuenta en vivo
+//   los últimos 30 días (modo "en-curso"): la página nunca queda vacía.
 //
 // Lee con la service role porque `submissions` no se puede leer en público (guarda nombres,
 // celulares y fotos); por eso mismo aquí no sale nada más que números y fechas.
@@ -31,10 +31,11 @@ export default async function handler(request) {
   const c = conexion();
   if (!c.url || !c.service) return json({ ok: false, error: "No disponible." }, 503);
 
-  let ultimo = null;
-  try { ultimo = await ultimoInforme(c); } catch { /* sin tabla o sin lectura: se cuenta en vivo */ }
-
   try {
+    // Sin tabla (migración 0007 sin aplicar) o sin ningún informe: se cuenta en vivo. Cualquier otro fallo de
+    // lectura es un error: con un informe publicado, decir «todavía no hay informe» sería falso.
+    let ultimo = null;
+    try { ultimo = await ultimoInforme(c); } catch (e) { if (!e?.sinTabla) throw e; }
     return ultimo ? json(await informePublicado(c, ultimo), 200, CACHE) : json(await enCurso(c), 200, CACHE);
   } catch {
     return json({ ok: false, error: "No se pudo calcular el informe." }, 502);

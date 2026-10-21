@@ -73,6 +73,7 @@ test("pregunta a la base con la service role: un conteo por tema y uno del total
 test("lo que no es de ningún tema conocido va aparte, como 'Otros temas'", async () => {
   globalThis.fetch = async (url, init) => {
     llamadas.push({ url: String(url), init });
+    if (new URL(url).pathname.endsWith("/informe_publico")) return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
     const tema = new URL(url).searchParams.get("tema");
     const n = tema === "eq.Basura y aseo" ? 2 : tema ? 0 : 5; // total 5, 3 sin tema conocido
     return new Response(null, { status: 200, headers: { "content-range": n ? `0-0/${n}` : "*/0" } });

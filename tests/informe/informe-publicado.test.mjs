@@ -1,5 +1,5 @@
 // /api/informe cuando ya hay un informe publicado (automático o manual): muestra ese, no el conteo en vivo.
-// Si todavía no hay ninguno, o la tabla no existe, o falla, cae al conteo en vivo de 30 días ("en-curso").
+// Si todavía no hay ninguno, o la tabla no existe (migración sin aplicar), cae al conteo en vivo de 30 días ("en-curso").
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import handler from "../../api/informe.js";
@@ -135,12 +135,15 @@ test("si la tabla informe_publico no existe todavía (migración 0007 sin aplica
   assert.equal(d.total, 1);
 });
 
-test("si falla la lectura del informe, también cae al conteo en vivo en vez de dejar la página vacía", async () => {
+test("si falla la lectura del informe (y no es que falte la tabla) no inventa el conteo en vivo: responde 502 y sin caché", async () => {
+  // Con un informe ya publicado, mostrar «todavía no hay primer informe» sería falso; mejor el aviso de error
+  // de la página (y Vercel sigue sirviendo la última respuesta buena de su caché).
   montar({ informes: [informe()], opiniones: [opinion("Basura y aseo", new Date(), DIA)] });
   sb.estado.falla = (ruta) => ruta === "informe_publico";
   const r = await handler(pedir());
-  assert.equal(r.status, 200);
-  assert.equal((await r.json()).modo, "en-curso");
+  assert.equal(r.status, 502);
+  assert.equal(r.headers.get("Cache-Control"), "no-store");
+  assert.deepEqual(await r.json(), { ok: false, error: "No se pudo calcular el informe." });
 });
 
 test("si falla todo (informe y conteo) responde 502 genérico y sin caché", async () => {

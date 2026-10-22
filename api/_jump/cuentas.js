@@ -4,7 +4,7 @@ import { json } from "./http.js";
 import { rest, authAdmin, miembro, actualizarMiembro, bitacora } from "./supa.js";
 import { claveTemporal, esUuid } from "./secretos.js";
 import { whatsapp, texto, nombre } from "./normalizar.js";
-import { limpiarCedula, cedulaValida, usuarioValido, correoEmprendedor, correoEquipo } from "../../jump/comunidad/js/cedula.js";
+import { limpiarCedula, cedulaValida, correoValido, usuarioDesdeCorreo, correoEmprendedor } from "../../jump/comunidad/js/cedula.js";
 
 const VENCE_MS = 7 * 864e5;
 const BAN_INDEFINIDO = "876000h"; // 100 años: Supabase no tiene "para siempre"
@@ -12,19 +12,27 @@ const BAN_INDEFINIDO = "876000h"; // 100 años: Supabase no tiene "para siempre"
 const mal = (campo, error) => json({ ok: false, campo, error }, 400);
 const noEncontrada = () => json({ ok: false, error: "No encontramos esa cuenta." }, 404);
 const vence = () => new Date(Date.now() + VENCE_MS).toISOString();
-const correoValido = (c) => c.length <= 120 && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(c);
 
-async function existe(columna, valor) {
-  const r = await rest(`jump_miembros?${columna}=eq.${encodeURIComponent(valor)}&select=user_id`);
+async function existe(columna, valor, filtro = "") {
+  const r = await rest(`jump_miembros?${columna}=eq.${encodeURIComponent(valor)}${filtro}&select=user_id`);
   if (!r.ok) throw new Error(`buscar ${columna} ${r.status}`);
   return (await r.json()).length > 0;
+}
+
+// El "usuario" interno de una persona del equipo sale de su correo; si ya está tomado se le agrega un número.
+async function usuarioLibre(base) {
+  for (let n = 1; n < 100; n++) {
+    const candidato = n === 1 ? base : `${base.slice(0, 30 - String(n).length - 1)}-${n}`;
+    if (!(await existe("usuario", candidato))) return candidato;
+  }
+  throw new Error("sin usuario libre");
 }
 
 async function crearCuenta(ctx, b) {
   const rol = b.rol;
   if (rol !== "emprendedor" && rol !== "admin") return mal("rol", "Elige si la cuenta es de un emprendedor o del equipo.");
   const fila = { rol, debe_cambiar_clave: true, clave_temporal_vence: vence(), creado_por: ctx.userId };
-  let email, columna, duplicado;
+  let email, columna, duplicado, filtro = "";
 
   if (rol === "emprendedor") {
     const cedula = limpiarCedula(b.cedula);
@@ -34,12 +42,13 @@ async function crearCuenta(ctx, b) {
     columna = "cedula";
     duplicado = "Ya existe una cuenta con esa cédula.";
   } else {
-    const usuario = String(b.usuario ?? "").trim().toLowerCase();
-    if (!usuarioValido(usuario)) return mal("usuario", "El usuario lleva de 3 a 30 caracteres: letras sin tildes, números, punto, guion o guion bajo.");
-    fila.usuario = usuario;
-    email = correoEquipo(usuario);
-    columna = "usuario";
-    duplicado = "Ya existe una cuenta con ese usuario.";
+    const correo = String(b.correo ?? "").trim().toLowerCase();
+    if (!correoValido(correo)) return mal("correo", "Escribe el correo de la persona, por ejemplo nombre@gmail.com.");
+    fila.correo = correo;
+    email = correo;
+    columna = "correo";
+    filtro = "&rol=eq.admin"; // el correo de contacto de un emprendedor no cuenta
+    duplicado = "Ya existe una cuenta con ese correo.";
   }
 
   fila.nombres = nombre(b.nombres);
@@ -61,7 +70,8 @@ async function crearCuenta(ctx, b) {
     }
   }
 
-  if (await existe(columna, fila[columna])) return json({ ok: false, campo: columna, error: duplicado }, 409);
+  if (await existe(columna, fila[columna], filtro)) return json({ ok: false, campo: columna, error: duplicado }, 409);
+  if (rol === "admin") fila.usuario = await usuarioLibre(usuarioDesdeCorreo(fila.correo));
 
   const clave = claveTemporal();
   const ra = await authAdmin("users", { method: "POST", body: { email, password: clave, email_confirm: true } });

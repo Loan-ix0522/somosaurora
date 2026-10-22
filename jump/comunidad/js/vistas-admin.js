@@ -430,7 +430,7 @@ async function vEmprendedores() {
 export function mostrarClave(persona, clave, creada) {
   const nombre = primerNombre(persona.nombres);
   const equipo = persona.rol === "admin";
-  const quien = equipo ? `su usuario (${persona.usuario})` : `su cédula (${persona.cedula})`;
+  const quien = equipo ? `su correo (${persona.correo})` : `su cédula (${persona.cedula})`;
   $("#claveTitulo").textContent = creada ? `Cuenta creada para ${nombre}` : `Clave nueva para ${nombre}`;
   $("#claveTexto").textContent = creada
     ? `Entra con ${quien} y esta clave temporal.`

@@ -1,6 +1,6 @@
-// Ingreso (cédula o usuario + clave) y primer ingreso (clave nueva + aviso de privacidad).
+// Ingreso (cédula o correo + clave) y primer ingreso (clave nueva + aviso de privacidad).
 import { $, esc, ic, logo, fieldErr, ocupado, toast } from "./ui.js";
-import { cedulaValida, limpiarCedula } from "./cedula.js";
+import { cedulaValida, limpiarCedula, correoValido } from "./cedula.js";
 import * as datos from "./datos.js";
 import { estado, ir, inicioDe, cerrarSesion } from "./app.js";
 
@@ -23,8 +23,8 @@ function formIngreso() {
         <button type="button" data-act="lrole" data-r="a" aria-pressed="${!e}">Equipo JUMP</button>
       </div>
       <div class="banner banner-bad" id="loginBanner" role="alert" hidden></div>
-      <div class="field"><label for="lgUser" class="label">${e ? "Cédula" : "Usuario"}</label>
-        <input class="input" id="lgUser" name="user" ${e ? 'inputmode="numeric" maxlength="13" placeholder="10 números"' : 'maxlength="30" placeholder="Tu usuario" autocapitalize="none" spellcheck="false"'} autocomplete="username" aria-describedby="lgUserErr">
+      <div class="field"><label for="lgUser" class="label">${e ? "Cédula" : "Correo"}</label>
+        <input class="input" id="lgUser" name="user" ${e ? 'inputmode="numeric" maxlength="13" placeholder="10 números"' : 'type="email" inputmode="email" maxlength="120" placeholder="tucorreo@gmail.com" autocapitalize="none" spellcheck="false"'} autocomplete="username" aria-describedby="lgUserErr">
         <p class="err" id="lgUserErr" hidden></p></div>
       <div class="field"><label for="lgPass" class="label">Clave</label>
         <span class="pw"><input class="input" id="lgPass" name="pass" type="password" maxlength="72" autocomplete="current-password" aria-describedby="lgPassErr">
@@ -117,18 +117,18 @@ async function enviarIngreso(f, btn) {
   if (rolIngreso === "e") {
     const v = limpiarCedula(u.value);
     mu = !v ? "Escribe tu cédula." : v.length !== 10 ? "La cédula tiene 10 números." : !cedulaValida(v) ? "Revisa tu cédula: no parece correcta." : "";
-  } else mu = u.value.trim() ? "" : "Escribe tu usuario.";
+  } else mu = !u.value.trim() ? "Escribe tu correo." : !correoValido(u.value.trim()) ? "Revisa tu correo: debe ser como nombre@gmail.com." : "";
   fieldErr(u, mu);
   const mp = p.value ? "" : "Escribe tu clave.";
   fieldErr(p, mp);
   if (mu || mp) { f.querySelector('[aria-invalid="true"]').focus(); return; }
   try {
-    const m = await ocupado(btn, datos.entrar({ tipo: rolIngreso === "e" ? "cedula" : "usuario", id: u.value, clave: p.value }));
+    const m = await ocupado(btn, datos.entrar({ tipo: rolIngreso === "e" ? "cedula" : "correo", id: u.value, clave: p.value }));
     estado.yo = m;
     if (m.debeCambiarClave) { $("#loginBox").innerHTML = formClaveNueva(); $("#np1").focus(); return; }
     ir(inicioDe(m));
   } catch (e) {
-    const msg = e.codigo === "credenciales" ? (rolIngreso === "e" ? "Cédula o clave incorrecta." : "Usuario o clave incorrecta.") : MENSAJES[e.codigo] || MENSAJES.red;
+    const msg = e.codigo === "credenciales" ? (rolIngreso === "e" ? "Cédula o clave incorrecta." : "Correo o clave incorrecta.") : MENSAJES[e.codigo] || MENSAJES.red;
     mostrarBanner("#loginBanner", msg);
     p.value = "";
     if (e.codigo === "credenciales") p.focus();

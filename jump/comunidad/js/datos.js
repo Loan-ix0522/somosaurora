@@ -2,7 +2,7 @@
 // Ninguna función devuelve errores crudos: todas lanzan ErrorJump { codigo, mensaje, campo? }.
 //   codigo: "credenciales" | "suspendida" | "sin_acceso" | "limite" | "red" | "sesion" | "prohibido" | "invalido" | "servidor"
 //           | "limite_publicaciones" | "limite_comentarios" | "foto_ilegible" (muro)
-import { correoEmprendedor, correoEquipo, limpiarCedula } from "./cedula.js";
+import { correoEmprendedor, limpiarCedula } from "./cedula.js";
 import { aISO, fechaCorta, partes } from "./fechas.js";
 import { reducirFoto, esImagenReducible, nombreReducido, sumarMaterial } from "./medios.js";
 
@@ -78,7 +78,7 @@ export async function salir() {
 
 export async function entrar({ tipo, id, clave }) {
   await iniciar();
-  const email = tipo === "cedula" ? correoEmprendedor(limpiarCedula(id)) : correoEquipo(id);
+  const email = tipo === "cedula" ? correoEmprendedor(limpiarCedula(id)) : String(id).trim().toLowerCase();
   let r;
   try { r = await sb.auth.signInWithPassword({ email, password: clave }); } catch { throw new ErrorJump("red"); }
   if (r.error) {
@@ -457,7 +457,7 @@ export const crearReunionZoom = (claseId) => adminApi("zoom-reunion", { claseId 
 // ---------- ajustes (equipo) ----------
 export const zoomIniciar = () => adminApi("zoom-iniciar");
 export const zoomDesconectar = () => adminApi("zoom-desconectar");
-export const crearAdmin = ({ usuario, nombres }) => adminApi("crear-cuenta", { rol: "admin", usuario, nombres });
+export const crearAdmin = ({ correo, nombres }) => adminApi("crear-cuenta", { rol: "admin", correo, nombres });
 export const ejemplosContar = () => adminApi("ejemplos-contar");
 export const ejemplosCargar = () => adminApi("ejemplos-cargar");
 export const ejemplosBorrar = () => adminApi("ejemplos-borrar", { confirmacion: "BORRAR" });

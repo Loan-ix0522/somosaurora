@@ -62,7 +62,7 @@ test("A crea una emprendedora y ella entra con su clave temporal", async () => {
   assert.equal(m.debe_cambiar_clave, true);
   assert.ok(new Date(m.clave_temporal_vence) > new Date(Date.now() + 6.9 * 864e5));
   assert.equal(m.creado_por, X.A.id);
-  const t = await token(`c${ced}@cuentas.laauroraescucha.com`, r.clave);
+  const t = await token(`c${ced}@laauroraescucha.com`, r.clave);
   assert.equal(t.status, 200);
   const yo = await (await fetch(sim.url + "/supa/rest/v1/rpc/jump_yo", { method: "POST",
     headers: { apikey: "anon", Authorization: "Bearer " + t.access_token, "Content-Type": "application/json" }, body: "{}" })).json();
@@ -77,12 +77,12 @@ test("la misma cédula otra vez → 409 sin usuario huérfano", async () => {
   const r = await admin("crear-cuenta", { rol: "emprendedor", cedula: ced, nombres: "Otro Nombre", negocio: "Otro" }, jwt);
   assert.equal(r.status, 409);
   assert.equal(r.error, "Ya existe una cuenta con esa cédula.");
-  assert.equal((await fila("select count(*)::int n from auth.users where email = $1", [`c${ced}@cuentas.laauroraescucha.com`])).n, 1);
+  assert.equal((await fila("select count(*)::int n from auth.users where email = $1", [`c${ced}@laauroraescucha.com`])).n, 1);
 });
 
 test("si Auth ya tiene el correo (huérfano) → 409 y no se toca", async () => {
   const ced = cedula("170000004");
-  await sim.crearUsuario({ email: `c${ced}@cuentas.laauroraescucha.com`, password: "x" });
+  await sim.crearUsuario({ email: `c${ced}@laauroraescucha.com`, password: "x" });
   const r = await admin("crear-cuenta", { rol: "emprendedor", cedula: ced, nombres: "Ana Ruiz", negocio: "Taller" }, await tok(X.A));
   assert.equal(r.status, 409);
 });
@@ -95,17 +95,40 @@ test("validaciones con campo", async () => {
   assert.equal((await admin("crear-cuenta", { ...base, negocio: "" }, jwt)).campo, "negocio");
   assert.equal((await admin("crear-cuenta", { ...base, whatsapp: "12345" }, jwt)).campo, "whatsapp");
   assert.equal((await admin("crear-cuenta", { ...base, rol: "jefe" }, jwt)).campo, "rol");
-  assert.equal((await admin("crear-cuenta", { rol: "admin", usuario: "Ana Admin", nombres: "Ana" + " Ruiz" }, jwt)).campo, "usuario");
+  assert.equal((await admin("crear-cuenta", { rol: "admin", correo: "esto no es un correo", nombres: "Ana" + " Ruiz" }, jwt)).campo, "correo");
+  assert.equal((await admin("crear-cuenta", { rol: "admin", nombres: "Ana" + " Ruiz" }, jwt)).campo, "correo");
 });
 
-test("A crea a otra persona del equipo con usuario", async () => {
-  const r = await admin("crear-cuenta", { rol: "admin", usuario: "Pedro.Equipo", nombres: "Pedro Equipo" }, await tok(X.A));
+test("A crea a otra persona del equipo con su correo real", async () => {
+  const jwt = await tok(X.A);
+  const r = await admin("crear-cuenta", { rol: "admin", correo: " Pedro.Equipo@Gmail.com ", nombres: "Pedro Equipo" }, jwt);
   assert.equal(r.status, 201);
-  const m = await fila("select rol, usuario from jump_miembros where user_id = $1", [r.userId]);
-  assert.deepEqual(m, { rol: "admin", usuario: "pedro.equipo" });
-  assert.equal((await token("pedro.equipo@equipo.laauroraescucha.com", r.clave)).status, 200);
-  const dup = await admin("crear-cuenta", { rol: "admin", usuario: "pedro.equipo", nombres: "Otro" + " Pedro" }, await tok(X.A));
-  assert.equal(dup.error, "Ya existe una cuenta con ese usuario.");
+  const m = await fila("select rol, usuario, correo from jump_miembros where user_id = $1", [r.userId]);
+  assert.deepEqual(m, { rol: "admin", usuario: "pedro.equipo", correo: "pedro.equipo@gmail.com" });
+  assert.equal((await fila("select email from auth.users where id = $1", [r.userId])).email, "pedro.equipo@gmail.com");
+  assert.equal((await token("pedro.equipo@gmail.com", r.clave)).status, 200, "entra con su correo y la clave temporal");
+  const dup = await admin("crear-cuenta", { rol: "admin", correo: "PEDRO.equipo@gmail.com", nombres: "Otro" + " Pedro" }, jwt);
+  assert.equal(dup.status, 409);
+  assert.equal(dup.campo, "correo");
+  assert.equal(dup.error, "Ya existe una cuenta con ese correo.");
+});
+
+test("dos correos con la misma parte inicial no chocan en el usuario interno", async () => {
+  const jwt = await tok(X.A);
+  const a = await admin("crear-cuenta", { rol: "admin", correo: "lucho@gmail.com", nombres: "Luis Uno" }, jwt);
+  const b = await admin("crear-cuenta", { rol: "admin", correo: "lucho@outlook.com", nombres: "Luis Dos" }, jwt);
+  assert.equal(a.status, 201);
+  assert.equal(b.status, 201);
+  const us = (await sim.db.query("select usuario from jump_miembros where user_id = any($1) order by usuario", [[a.userId, b.userId]])).rows.map((x) => x.usuario);
+  assert.deepEqual(us, ["lucho", "lucho-2"]);
+});
+
+test("el correo de contacto de un emprendedor no bloquea el correo de una persona del equipo", async () => {
+  const jwt = await tok(X.A);
+  const e = await admin("crear-cuenta", { rol: "emprendedor", cedula: cedula("170000101"), nombres: "Rosa Mora", negocio: "Tienda", correo: "rosa.mora@gmail.com" }, jwt);
+  assert.equal(e.status, 201);
+  const a = await admin("crear-cuenta", { rol: "admin", correo: "rosa.mora@gmail.com", nombres: "Rosa Mora" }, jwt);
+  assert.equal(a.status, 201, JSON.stringify(a));
 });
 
 test("A no puede suspenderse a sí mismo", async () => {
@@ -207,7 +230,7 @@ test("si el insert en jump_miembros falla, se borra el usuario de Auth (compensa
     const r = await admin("crear-cuenta", { rol: "emprendedor", cedula: ced, nombres: "Falla Forzada", negocio: "X" }, await tok(X.A));
     assert.equal(r.status, 500);
     assert.equal(r.error, "No se pudo completar. Intenta de nuevo.");
-    assert.equal((await fila("select count(*)::int n from auth.users where email = $1", [`c${ced}@cuentas.laauroraescucha.com`])).n, 0);
+    assert.equal((await fila("select count(*)::int n from auth.users where email = $1", [`c${ced}@laauroraescucha.com`])).n, 0);
   } finally {
     await sim.db.query("drop trigger falla_forzada on public.jump_miembros");
   }

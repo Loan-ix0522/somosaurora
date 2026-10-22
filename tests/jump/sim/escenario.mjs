@@ -14,15 +14,15 @@ async function miembro(db, email, campos) {
 }
 
 export async function crearEscenario(db) {
-  const A = await miembro(db, "ana.admin@equipo.laauroraescucha.com",
-    { rol: "admin", usuario: "ana.admin", nombres: "Ana Torres", debe_cambiar_clave: false });
-  const p = (k, extra = {}) => miembro(db, `c${ced[k]}@cuentas.laauroraescucha.com`, {
+  const A = await miembro(db, "ana.torres@correo.test",
+    { rol: "admin", usuario: "ana.torres", correo: "ana.torres@correo.test", nombres: "Ana Torres", debe_cambiar_clave: false });
+  const p = (k, extra = {}) => miembro(db, `c${ced[k]}@laauroraescucha.com`, {
     rol: "emprendedor", cedula: ced[k], nombres: { E: "María José Vera", E2: "Carlos Mendoza", S: "Rosa Quinde", N: "Luis Alvarado" }[k],
     negocio: "Negocio " + k, whatsapp: "0991234567", debe_cambiar_clave: false, ...extra });
   const E = await p("E"), E2 = await p("E2");
   const S = await p("S", { estado: "suspendida" });
   const N = await p("N", { debe_cambiar_clave: true, clave_temporal_vence: new Date(Date.now() + 7 * 864e5).toISOString() });
-  const U = { email: "solo.auth@cuentas.laauroraescucha.com" };
+  const U = { email: "solo.auth@laauroraescucha.com" };
   U.id = await nuevoUsuario(db, { email: U.email, password: "x" });
 
   const one = async (sql, params) => (await db.query(sql + " returning id", params)).rows[0].id;

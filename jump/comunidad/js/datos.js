@@ -4,7 +4,7 @@
 //           | "limite_publicaciones" | "limite_comentarios" | "foto_ilegible" (muro)
 import { correoEmprendedor, correoEquipo, limpiarCedula } from "./cedula.js";
 import { aISO, fechaCorta, partes } from "./fechas.js";
-import { reducirFoto } from "./medios.js";
+import { reducirFoto, esImagenReducible, nombreReducido, sumarMaterial } from "./medios.js";
 
 // Debe coincidir con la fecha de jump/comunidad/privacidad.html y con api/jump-clave.js.
 export const VERSION_PRIVACIDAD = "2026-10-19";
@@ -291,7 +291,7 @@ export async function cargarAdmin() {
   const avisos = avs.data.map(aAviso).map((a) => ({ ...a, vistos: c.avisos[a.id] || 0 }));
   const miembros = mie.data.map(miembro).map((x) => ({ ...x, hechos: c.progreso[x.userId] || 0 }));
   const bitacora = bit.data.map((b) => ({ id: b.id, actorId: b.actor_id, accion: b.accion, objetivo: b.objetivo, detalle: b.detalle, creadoEn: b.creado_en }));
-  return { yo: m, mentorias, clases, avisos, miembros, bitacora, zoom, cargadoEn: Date.now() };
+  return { yo: m, mentorias, clases, avisos, miembros, bitacora, zoom, almacenamiento: sumarMaterial(mats.data), cargadoEn: Date.now() };
 }
 
 // Clase de un módulo en vivo: el título del módulo si alcanza (la clase pide de 3 a 120 caracteres).
@@ -416,12 +416,20 @@ export async function subirMaterial(mentoriaId, moduloId, file, orden = 0) {
   await iniciar();
   const malo = errorMaterial(file);
   if (malo) throw new ErrorJump("invalido", malo);
-  const ruta = `${mentoriaId}/${crypto.randomUUID()}-${nombreSeguro(file.name)}`;
-  await q(sb.storage.from("jump-material").upload(ruta, file, { contentType: file.type, upsert: false }));
+  // Una imagen se sube reducida (WebP, máx. 2000 px), como las fotos del muro y las portadas. Si no queda más liviana, se sube la original.
+  // PDF, Word, Excel y PowerPoint no se pueden recomprimir en el navegador sin dañarlos: se suben tal cual.
+  let blob = file, nombre = file.name;
+  if (esImagenReducible(file.type)) {
+    let reducida;
+    try { reducida = await reducirFoto(file, 2000); } catch { throw new ErrorJump("invalido", `${file.name}: no pudimos leer esa imagen. Prueba con otra.`); }
+    if (reducida.size < file.size) { blob = reducida; nombre = nombreReducido(file.name, reducida.type); }
+  }
+  const ruta = `${mentoriaId}/${crypto.randomUUID()}-${nombreSeguro(nombre)}`;
+  await q(sb.storage.from("jump-material").upload(ruta, blob, { contentType: blob.type, upsert: false }));
   try {
     const r = await q(sb.from("jump_materiales").insert({
-      mentoria_id: mentoriaId, modulo_id: moduloId || null, nombre: file.name.trim().slice(0, 160) || "Archivo", tipo: "archivo",
-      ruta, bytes: file.size, mime: file.type, orden,
+      mentoria_id: mentoriaId, modulo_id: moduloId || null, nombre: nombre.trim().slice(0, 160) || "Archivo", tipo: "archivo",
+      ruta, bytes: blob.size, mime: blob.type, orden,
     }).select("*").single());
     return aMaterial(r.data);
   } catch (e) {

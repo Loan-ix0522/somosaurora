@@ -8,6 +8,7 @@
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { deflateSync, crc32 } from "node:zlib";
 import { join } from "node:path";
 import { iniciarSim } from "../sim/servidor.mjs";
 import { crearEscenario } from "../sim/escenario.mjs";
@@ -237,6 +238,26 @@ const adminNuevo = async (usuario, nombres) => {
   if (r.status !== 201) throw new Error("no se creó el admin: " + JSON.stringify(r));
   return r.userId;
 };
+
+// PNG de verdad (RGB, sin transparencia) con un degradado y algo de ruido: pesa bastante en PNG y mucho menos en WebP.
+function pngDePrueba(ancho, alto) {
+  const fila = 1 + ancho * 3, crudo = Buffer.alloc(fila * alto);
+  for (let y = 0; y < alto; y++) {
+    const o = y * fila; // el byte de filtro queda en 0
+    for (let x = 0; x < ancho; x++) {
+      const i = o + 1 + x * 3;
+      crudo[i] = (x * 255 / ancho) | 0; crudo[i + 1] = (y * 255 / alto) | 0; crudo[i + 2] = ((x ^ y) + ((x * 7 + y * 13) % 5)) & 255;
+    }
+  }
+  const trozo = (tipo, datos) => {
+    const t = Buffer.concat([Buffer.from(tipo), datos]);
+    const lon = Buffer.alloc(4); lon.writeUInt32BE(datos.length);
+    const c = Buffer.alloc(4); c.writeUInt32BE(crc32(t) >>> 0);
+    return Buffer.concat([lon, t, c]);
+  };
+  const cab = Buffer.alloc(13); cab.writeUInt32BE(ancho, 0); cab.writeUInt32BE(alto, 4); cab[8] = 8; cab[9] = 2;
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), trozo("IHDR", cab), trozo("IDAT", deflateSync(crudo, { level: 1 })), trozo("IEND", Buffer.alloc(0))]);
+}
 
 // ---------- escenarios ----------
 const ESCENARIOS = {
@@ -594,6 +615,27 @@ const ESCENARIOS = {
       if (!new RegExp(`^${X.B}/[0-9a-f-]{36}-guia-precios\\.pdf$`).test(f.ruta)) return "ruta: " + f.ruta;
       return sim.archivos.has("jump-material/" + f.ruta) || "no quedó en Storage";
     },
+    "subir-material-imagen": async () => {
+      const dir = mkdtempSync(join(tmpdir(), "jump-img-"));
+      const ruta = join(dir, "Foto del local.PNG");
+      const original = pngDePrueba(2600, 1700);
+      writeFileSync(ruta, original);
+      await entrarEquipo();
+      await ir(`a/editor/${X.B}`);
+      await esperar(`!!document.querySelector('input[data-cambio="material"]')`);
+      const antes = await ev(`document.querySelectorAll("#edFiles li").length`);
+      await subirArchivo('input[data-cambio="material"]', ruta);
+      await esperar(`document.querySelectorAll("#edFiles li").length === ${antes + 1}`);
+      const f = await fila("select ruta, nombre, bytes, mime from public.jump_materiales where mentoria_id = $1 and tipo = 'archivo' and nombre like 'Foto del local%'", [X.B]);
+      rmSync(dir, { recursive: true, force: true });
+      if (!f) return "no se guardó la fila";
+      if (f.mime !== "image/webp" || f.nombre !== "Foto del local.webp" || !/\.webp$/.test(f.ruta)) return "no quedó como WebP: " + JSON.stringify(f);
+      if (!(Number(f.bytes) < original.length / 4)) return `no se redujo lo suficiente: ${f.bytes} de ${original.length} bytes`;
+      const guardado = sim.archivos.get("jump-material/" + f.ruta);
+      if (!guardado) return "no quedó en Storage";
+      const n = guardado.bytes.length ?? guardado.bytes;
+      return (n === Number(f.bytes)) || `bytes de la fila (${f.bytes}) ≠ archivo guardado (${n})`;
+    },
     "programar-clase-manual": async () => {
       await entrarEquipo();
       await ir("a/clases");
@@ -844,6 +886,31 @@ const ESCENARIOS = {
   },
 
   ajustes: {
+    "espacio-material": async () => {
+      await sql("delete from public.jump_materiales where tipo = 'archivo'");
+      await abrirAjustes();
+      await esperar(`!!document.querySelector("#espacioEstado")`);
+      const vacio = await texto("#espacioEstado");
+      if (!vacio.includes("0 MB de 1 GB") || !vacio.includes("0 archivos")) return "sin archivos: " + vacio;
+      if (await ev(`!!document.querySelector("#espacioAviso")`)) return "avisa sin haber usado nada";
+      const mb = (n) => n * 1024 * 1024;
+      await sql(`insert into public.jump_materiales (mentoria_id, nombre, tipo, ruta, bytes, mime) values
+        ($1, 'Guía grande.pdf', 'archivo', $2, $3, 'application/pdf'), ($1, 'Plantilla.xlsx', 'archivo', $4, $5, 'application/vnd.ms-excel')`,
+        [X.P, `${X.P}/a-guia.pdf`, mb(700), `${X.P}/b-plantilla.xlsx`, mb(50)]);
+      try {
+        await ir("a/mentorias"); await ir("a/ajustes"); // otra visita: vuelve a cargar los datos
+        await send("Page.reload");
+        await esperar(`!!document.querySelector("#espacioEstado")`);
+        const medio = await texto("#espacioEstado");
+        const barra = await ev(`document.querySelector("#espacioEstado").closest(".aj-body").querySelector(".bar").className`);
+        const aviso = await ev(`document.querySelector("#espacioAviso")?.textContent.trim() ?? null`);
+        await foto("ajustes-espacio-atencion");
+        return (medio.includes("750,0 MB de 1 GB") && medio.includes("2 archivos") && /\batencion\b/.test(barra) && !!aviso && aviso.includes("buena parte"))
+          || JSON.stringify({ medio, barra, aviso });
+      } finally {
+        await sql("delete from public.jump_materiales where tipo = 'archivo'");
+      }
+    },
     "zoom-conectar": async () => {
       await asegurarZoom(false);
       await abrirAjustes();

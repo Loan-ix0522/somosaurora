@@ -89,6 +89,13 @@ La Política de tratamiento de datos personales promete borrar las opiniones y s
   ```
   `?dry=1` solo cuenta lo que se borraría. Cada ejecución borra hasta 1000 opiniones; si sobran, siguen al día siguiente. Si falla el borrado de fotos, no se borra la fila y se reintenta.
 
+## Comunidad JUMP
+La plataforma de JUMP (`/jump/comunidad/`: ingreso, área del emprendedor, panel del equipo, muro y ajustes de Zoom) vive en su **propio proyecto de Supabase**, aparte del de La Aurora. Sus variables llevan el prefijo `JUMP_` (más las de Zoom) y no tienen respaldo en las de La Aurora.
+- Guía paso a paso para ponerla en marcha: [`docs/jump/PUESTA-EN-MARCHA.md`](docs/jump/PUESTA-EN-MARCHA.md).
+- Migración: `supabase/jump/0001_comunidad_jump.sql` (en el proyecto de JUMP, nunca en el de La Aurora).
+- Pruebas: `cd tests/jump && node --test` (base simulada con Postgres real) y `node tests/jump/ui/todo.mjs` (pantallas en un Chrome real, escritorio y móvil).
+- Seguridad: sección «Comunidad JUMP» de `docs/loanix/SECURITY.md`.
+
 ## Seguridad
 Detalle y límites en `docs/loanix/SECURITY.md`. Lo esencial:
 - `service_role` solo en variables de entorno de Vercel. Nunca en el navegador ni en el repo.

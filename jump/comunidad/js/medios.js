@@ -63,3 +63,36 @@ export async function reducirFoto(file, max = 1600) {
   if (!blob) throw new Error("foto_ilegible");
   return blob;
 }
+
+// ---------- imágenes del material y espacio usado ----------
+
+// Las imágenes que se adjuntan como material se reducen igual que las fotos (mismas reglas de reducirFoto).
+export const esImagenReducible = (tipo) => /^image\/(jpeg|png|webp)$/.test(tipo || "");
+
+// Tras reducir la imagen cambia el formato, así que el nombre que se guarda y se muestra cambia de extensión.
+export function nombreReducido(nombre, mime) {
+  const base = String(nombre ?? "").trim().replace(/\.(jpe?g|png|webp)$/i, "").trim() || "Imagen";
+  return `${base}.${mime === "image/webp" ? "webp" : "jpg"}`;
+}
+
+// El plan gratis de Supabase da 1 GB de archivos por proyecto.
+export const LIMITE_ALMACENAMIENTO = 1024 ** 3;
+
+// Cuánto material hay subido: solo cuentan los archivos (los enlaces no ocupan espacio).
+export function sumarMaterial(filas) {
+  let archivos = 0, bytes = 0;
+  for (const f of filas || []) {
+    if (f?.tipo !== "archivo") continue;
+    archivos++;
+    bytes += Number(f.bytes) || 0;
+  }
+  return { archivos, bytes };
+}
+
+// Porcentaje usado (algo usado nunca se ve como 0 %, y nunca pasa de 100) y el aviso que le toca.
+export function resumenAlmacenamiento(bytes, limite = LIMITE_ALMACENAMIENTO) {
+  let porcentaje = Math.min(100, Math.round((bytes / limite) * 100));
+  if (bytes > 0 && porcentaje < 1) porcentaje = 1;
+  return { porcentaje, nivel: porcentaje >= 90 ? "lleno" : porcentaje >= 70 ? "atencion" : "ok" };
+}
+

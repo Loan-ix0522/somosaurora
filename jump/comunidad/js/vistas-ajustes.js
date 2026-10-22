@@ -2,6 +2,8 @@
 import { $, $$, esc, ic, iniciales, plural, toast, fieldErr, ocupado, asegurarDialogo } from "./ui.js";
 import * as datos from "./datos.js";
 import { haceCuanto } from "./fechas.js";
+import { tamano } from "./piezas.js";
+import { resumenAlmacenamiento } from "./medios.js";
 import { usuarioValido } from "./cedula.js";
 import { nombre as normNombre } from "./normalizar.js";
 import { estado, refrescar } from "./app.js";
@@ -120,6 +122,27 @@ function equipoSeccion() {
   </section>`;
 }
 
+const LIMITE_TEXTO = "1 GB"; // = LIMITE_ALMACENAMIENTO de medios.js
+const AVISO_ESPACIO = {
+  ok: "",
+  atencion: "Ya usaste buena parte del espacio gratis. Revisa el material que ya no se usa y bórralo desde la mentoría.",
+  lleno: "Casi no queda espacio gratis. Borra material que ya no se use, o pasa a un plan de pago, antes de subir más archivos.",
+};
+
+function espacioSeccion(al) {
+  const { porcentaje, nivel } = resumenAlmacenamiento(al.bytes);
+  const aviso = AVISO_ESPACIO[nivel];
+  const usado = al.bytes ? tamano(al.bytes) : "0 MB";
+  return `<section class="panel aj" aria-labelledby="t-esp">
+    <header class="aj-head"><div><h2 id="t-esp">Espacio del material</h2><p>Lo que ocupan los archivos que subes como material adicional. El plan gratis de Supabase da ${LIMITE_TEXTO} por proyecto.</p></div></header>
+    <div class="aj-body">
+      <p class="aj-estado${nivel === "ok" ? " ok" : ""}" id="espacioEstado">${ic(nivel === "ok" ? "check" : "alert")}<span><b>${usado}</b> de ${LIMITE_TEXTO} · ${plural(al.archivos, "archivo", "archivos")}</span></p>
+      <div class="prog" role="img" aria-label="${porcentaje} % del espacio gratis usado"><div class="bar ${nivel}"><i style="width:${porcentaje}%"></i></div><span>${porcentaje} %</span></div>
+      ${aviso ? `<p class="aj-aviso" id="espacioAviso">${aviso}</p>` : ""}
+      <p class="hint">Las imágenes se reducen solas al subirlas, igual que las fotos del muro y las portadas. Los PDF y los archivos de Office se suben tal cual: si pesan mucho, comprímelos antes. Las fotos del muro no se cuentan aquí; el uso total lo ves en Supabase, en Usage.</p>
+    </div></section>`;
+}
+
 function ejemplosSeccion() {
   const hay = hayEjemplos();
   return `<section class="panel aj" aria-labelledby="t-ej">
@@ -137,8 +160,8 @@ async function vAjustes({ query }) {
   const aviso = AVISO_ZOOM[query.get("zoom")];
   return {
     titulo: "Ajustes",
-    html: `<div class="page-head"><div><h1>Ajustes</h1><p class="sub">La cuenta de Zoom, quién del equipo entra al panel y los datos de ejemplo.</p></div></div>
-      ${zoomSeccion(a.zoom)}${equipoSeccion()}${ejemplosSeccion()}`,
+    html: `<div class="page-head"><div><h1>Ajustes</h1><p class="sub">La cuenta de Zoom, quién del equipo entra al panel, el espacio del material y los datos de ejemplo.</p></div></div>
+      ${zoomSeccion(a.zoom)}${equipoSeccion()}${espacioSeccion(a.almacenamiento)}${ejemplosSeccion()}`,
     despues: () => {
       prepararAjustes();
       filaNueva = null;

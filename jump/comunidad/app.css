@@ -121,6 +121,8 @@ p{margin:0}
 .bar{flex:1;min-width:48px;height:6px;border-radius:99px;background:#E4E8F3;overflow:hidden}
 .bar i{display:block;height:100%;border-radius:inherit;background:var(--navy);transition:width .5s var(--ease-out)}
 .bar.done i{background:var(--ok)}
+.bar.atencion i{background:#B54708}
+.bar.lleno i{background:var(--bad)}
 .ava{width:36px;height:36px;flex:none;border-radius:50%;display:grid;place-items:center;font:700 13px/1 var(--font);font-stretch:100%;background:var(--sky-100);color:var(--ink)}
 .ava.k1{background:var(--sun-100)} .ava.k2{background:var(--peach-100)} .ava.k3{background:#D9F0E4}
 .m-meta{color:var(--ink-3);font-size:13.5px}

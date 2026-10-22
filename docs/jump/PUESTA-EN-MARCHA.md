@@ -1,7 +1,7 @@
 # Comunidad JUMP — puesta en marcha
 
 Guía para dejar funcionando la plataforma de JUMP en `https://www.laauroraescucha.com/jump/comunidad/`.
-Son nueve pasos, en este orden. Los pasos 1 a 5 dejan la plataforma lista para enseñarla con datos de ejemplo; el 6 y el 7 conectan Zoom; el 8 y el 9 son para antes de usarla con personas reales.
+Son diez pasos, en este orden. Los pasos 1 a 5 dejan la plataforma lista para enseñarla con datos de ejemplo; el 6 y el 7 conectan Zoom; del 8 al 10 son para antes de usarla con personas reales y para cuidarla después.
 
 **Regla de oro:** las llaves (`service_role`, secretos de Zoom, `JUMP_SECRET`) se pegan **solo** en Vercel. No van en el código, no van en el chat, no van en un correo.
 
@@ -106,6 +106,17 @@ Si en Ajustes aparece «Zoom todavía no está configurado en el servidor», fal
 ## 9. Una nota sobre las clases en Zoom
 
 Las cuentas gratuitas de Zoom cortan las reuniones de más de **2 personas a los 40 minutos**. Si las clases duran más, hace falta un plan de pago en la cuenta de Zoom de JUMP (o planear la clase en dos tramos). No es un fallo de la plataforma.
+
+## 10. Cuidar el espacio gratis
+
+El plan gratis de Supabase da **1 GB** de archivos por proyecto. Lo que ocupa espacio:
+
+- **Videos: nada.** No se suben: se pega el enlace de YouTube o Vimeo y se ven dentro de la plataforma.
+- **Fotos del muro y portadas:** se reducen solas al subirlas (máximo 1600 px, WebP) y pesan unos cientos de KB.
+- **Imágenes del material adicional:** también se reducen solas (máximo 2000 px, WebP). Si la reducida no queda más liviana, se sube la original.
+- **PDF, Word, Excel y PowerPoint:** se suben tal cual (hasta 20 MB cada uno); en el navegador no se pueden recomprimir sin dañarlos. Si uno pesa mucho, comprímelo antes de subirlo.
+
+**Ajustes → Espacio del material** muestra cuánto material llevas subido contra el gigabyte gratis y avisa al pasar del 70 % y del 90 %. No cuenta las fotos del muro; el uso total lo ves en el panel de Supabase (**Usage**).
 
 ---
 

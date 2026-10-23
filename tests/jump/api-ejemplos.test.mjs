@@ -77,7 +77,7 @@ test("las cédulas de ejemplo son válidas, empiezan con 30 y nadie las ve como 
   for (const { cedula, email } of rows) {
     assert.ok(cedulaValida(cedula), cedula);
     assert.ok(cedula.startsWith("30"), cedula);
-    assert.equal(email, `c${cedula}@cuentas.laauroraescucha.com`);
+    assert.equal(email, `c${cedula}@laauroraescucha.com`);
   }
   const { rows: claves } = await sim.db.query("select encrypted_password p from auth.users u join jump_miembros m on m.user_id = u.id where m.es_ejemplo");
   assert.ok(claves.every((c) => c.p.length >= 24 && !/^JUMP-/.test(c.p)), "clave larga aleatoria, no una temporal");
@@ -112,7 +112,7 @@ test("borrar exige escribir BORRAR; con BORRAR no queda nada de ejemplo y lo rea
   assert.equal(r.borrados.miembros, 12);
   for (const t of ["jump_mentorias", "jump_modulos", "jump_materiales", "jump_clases", "jump_avisos", "jump_posts", "jump_comentarios", "jump_miembros"])
     assert.equal(await n(`select count(*)::int n from ${t} where es_ejemplo`), 0, t);
-  assert.equal(await n("select count(*)::int n from auth.users where email like 'c30%@cuentas.laauroraescucha.com'"), 0);
+  assert.equal(await n("select count(*)::int n from auth.users where email like 'c30%@laauroraescucha.com'"), 0);
   assert.equal(await n("select count(*)::int n from jump_miembros where user_id = any($1::uuid[])", [[X.A.id, X.E.id]]), 2);
   assert.equal(await n("select count(*)::int n from jump_mentorias where id = $1", [X.P]), 1);
   assert.equal(await n("select count(*)::int n from jump_bitacora where accion in ('ejemplos-cargar', 'ejemplos-borrar')"), 2);

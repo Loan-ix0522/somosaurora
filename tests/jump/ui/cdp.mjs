@@ -100,7 +100,7 @@ async function foto(nombre) {
 }
 async function entrar(p, clave = "clave-prueba-1", { equipo = false } = {}) {
   await abrir("ingreso");
-  if (equipo) { await clic('[data-act="lrole"][data-r="a"]'); await escribir("#lgUser", p.usuario); }
+  if (equipo) { await clic('[data-act="lrole"][data-r="a"]'); await escribir("#lgUser", p.correo); }
   else await escribir("#lgUser", cedulaDe(p));
   await escribir("#lgPass", clave);
   await clic("#loginForm [type=submit]");
@@ -155,7 +155,7 @@ async function cedulaNueva(base) {
   throw new Error("sin cédula válida para " + base);
 }
 const entrarEquipo = async () => {
-  await entrar({ usuario: "ana.admin" }, "clave-prueba-1", { equipo: true });
+  await entrar({ correo: "ana.torres@correo.test" }, "clave-prueba-1", { equipo: true });
   await esperar(`location.hash === "#a/resumen"`);
 };
 // window.open falso: guarda lo que la app abre. La app abre la pestaña antes de esperar la red y después le pone la URL.
@@ -233,8 +233,8 @@ const abrirAjustes = async () => {
   await esperar(`!!document.querySelector("#zoomEstado")`);
 };
 const filaEquipo = (id, sel = "") => `[data-equipo="${id}"] ${sel}`.trim();
-const adminNuevo = async (usuario, nombres) => {
-  const r = await apiAdmin("crear-cuenta", { rol: "admin", usuario, nombres });
+const adminNuevo = async (correo, nombres) => {
+  const r = await apiAdmin("crear-cuenta", { rol: "admin", correo, nombres });
   if (r.status !== 201) throw new Error("no se creó el admin: " + JSON.stringify(r));
   return r.userId;
 };
@@ -281,6 +281,30 @@ const ESCENARIOS = {
       const t = await texto("#loginBanner");
       return t.includes("Tu cuenta está suspendida. Escríbele al equipo de JUMP.") || t;
     },
+    "equipo-entra-con-correo": async () => {
+      await abrir("ingreso");
+      await clic('[data-act="lrole"][data-r="a"]');
+      const campo = await ev(`(() => { const i = document.querySelector("#lgUser"); return { etiqueta: document.querySelector('label[for="lgUser"]').textContent.trim(), tipo: i.type }; })()`);
+      if (campo.etiqueta !== "Correo" || campo.tipo !== "email") return JSON.stringify(campo);
+      await escribir("#lgUser", "ana");
+      await escribir("#lgPass", "clave-prueba-1");
+      await clic("#loginForm [type=submit]");
+      const err = await esperar(`!document.querySelector("#lgUserErr").hidden && document.querySelector("#lgUserErr").textContent`);
+      if (!err.includes("Revisa tu correo")) return err;
+      await foto("ingreso-equipo-correo");
+      await escribir("#lgUser", "ana.torres@correo.test");
+      await escribir("#lgPass", "clave-mala-1");
+      await clic("#loginForm [type=submit]");
+      await esperar(`!document.querySelector("#loginBanner").hidden`);
+      const t = await texto("#loginBanner");
+      if (!t.includes("Correo o clave incorrecta")) return t;
+      // mayúsculas y espacios alrededor no estorban
+      await escribir("#lgUser", "  ANA.Torres@Correo.TEST ");
+      await escribir("#lgPass", "clave-prueba-1");
+      await clic("#loginForm [type=submit]");
+      await esperar(`location.hash === "#a/resumen"`);
+      return true;
+    },
     "primer-ingreso": async () => {
       await entrar(X.N);
       await esperar(`!!document.querySelector("#newPassForm")`);
@@ -297,7 +321,7 @@ const ESCENARIOS = {
       return (!m.debe_cambiar_clave && m.privacidad_version === "2026-10-19") || JSON.stringify(m);
     },
     "admin-entra": async () => {
-      await entrar({ usuario: "ana.admin" }, "clave-prueba-1", { equipo: true });
+      await entrar({ correo: "ana.torres@correo.test" }, "clave-prueba-1", { equipo: true });
       await esperar(`location.hash === "#a/resumen" && !!document.querySelector(".shell")`);
       await foto("admin-entra");
       return true;
@@ -986,16 +1010,16 @@ const ESCENARIOS = {
       await clic("#equipoForm [type=submit]");
       const vacios = await ev(`document.querySelectorAll("#equipoForm .err:not([hidden])").length`);
       if (vacios !== 2) return "errores con el formulario vacío: " + vacios;
-      await escribir("#eqUsuario", "Ana.Admin");
+      await escribir("#eqCorreo", "Ana.Torres@Correo.test");
       await escribir("#eqNombres", "Otra Persona");
       await clic("#equipoForm [type=submit]");
-      const rep = await esperar(`!document.querySelector("#eqUsuarioErr").hidden && document.querySelector("#eqUsuarioErr").textContent`);
-      if (!rep.includes("Ya existe una cuenta con ese usuario")) return rep;
-      await escribir("#eqUsuario", "no vale ñ");
+      const rep = await esperar(`!document.querySelector("#eqCorreoErr").hidden && document.querySelector("#eqCorreoErr").textContent`);
+      if (!rep.includes("Ya existe una cuenta con ese correo")) return rep;
+      await escribir("#eqCorreo", "no vale ñ");
       await clic("#equipoForm [type=submit]");
-      const malo = await esperar(`!document.querySelector("#eqUsuarioErr").hidden && document.querySelector("#eqUsuarioErr").textContent`);
-      if (!malo.includes("de 3 a 30 caracteres")) return malo;
-      await escribir("#eqUsuario", "luis.equipo");
+      const malo = await esperar(`!document.querySelector("#eqCorreoErr").hidden && document.querySelector("#eqCorreoErr").textContent`);
+      if (!malo.includes("Revisa el correo")) return malo;
+      await escribir("#eqCorreo", "luis.equipo@gmail.com");
       await escribir("#eqNombres", "Luis Alberto Mora");
       await foto("ajustes-equipo-agregar");
       await dobleClic("#equipoForm [type=submit]");
@@ -1003,10 +1027,10 @@ const ESCENARIOS = {
       const clave = await texto("#claveCodigo"), titulo = await texto("#claveTitulo"), detalle = await texto("#claveTexto");
       const sinWa = await ev(`document.querySelector("#claveWa").hidden`);
       await foto("ajustes-equipo-clave");
-      const filas = (await sql("select user_id, rol, debe_cambiar_clave from public.jump_miembros where usuario = 'luis.equipo'")).rows;
+      const filas = (await sql("select user_id, rol, debe_cambiar_clave from public.jump_miembros where correo = 'luis.equipo@gmail.com'")).rows;
       if (filas.length !== 1 || filas[0].rol !== "admin" || !filas[0].debe_cambiar_clave) return "cuentas creadas: " + JSON.stringify(filas);
       if (!/^JUMP-\d{4}-\d{4}$/.test(clave)) return "clave: " + clave;
-      if (!titulo.includes("Cuenta creada para Luis") || !detalle.includes("luis.equipo") || detalle.includes("cédula") || !sinWa) return JSON.stringify({ titulo, detalle, sinWa });
+      if (!titulo.includes("Cuenta creada para Luis") || !detalle.includes("luis.equipo@gmail.com") || detalle.includes("cédula") || !sinWa) return JSON.stringify({ titulo, detalle, sinWa });
       await clic('#dlgClave [data-act="cerrar"]');
       const N = filas[0].user_id;
       await esperar(`!!document.querySelector('${filaEquipo(N)}')`);
@@ -1025,7 +1049,7 @@ const ESCENARIOS = {
       await clic("#resetForm [type=submit]");
       await esperar(`document.querySelector("#dlgClave")?.open`);
       const nueva = await texto("#claveCodigo"), t2 = await texto("#claveTexto");
-      if (!/^JUMP-\d{4}-\d{4}$/.test(nueva) || nueva === clave || !t2.includes("luis.equipo")) return JSON.stringify({ nueva, t2 });
+      if (!/^JUMP-\d{4}-\d{4}$/.test(nueva) || nueva === clave || !t2.includes("luis.equipo@gmail.com")) return JSON.stringify({ nueva, t2 });
       await clic('#dlgClave [data-act="cerrar"]');
       // lo que dice el servidor de la cuenta propia
       const r = await apiAdmin("suspender", { userId: X.A.id });
@@ -1033,7 +1057,7 @@ const ESCENARIOS = {
     },
     "equipo-rechazo": async () => {
       erroresEsperados.push([/jump-admin/, /status of 404/]); // el rechazo de este escenario es a propósito
-      const N = await adminNuevo("prueba.rechazo", "Prueba Rechazo");
+      const N = await adminNuevo("prueba.rechazo@gmail.com", "Prueba Rechazo");
       await abrirAjustes();
       await esperar(`!!document.querySelector('${filaEquipo(N)}')`);
       // la cuenta desaparece del servidor mientras la página la sigue mostrando

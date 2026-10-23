@@ -4,7 +4,7 @@ import * as datos from "./datos.js";
 import { haceCuanto } from "./fechas.js";
 import { tamano } from "./piezas.js";
 import { resumenAlmacenamiento } from "./medios.js";
-import { usuarioValido } from "./cedula.js";
+import { correoValido } from "./cedula.js";
 import { nombre as normNombre } from "./normalizar.js";
 import { estado, refrescar } from "./app.js";
 import { cargar, invalidar, prepararDialogos, mostrarClave, conAviso, hayEjemplos, equipoJump } from "./vistas-admin.js";
@@ -16,7 +16,6 @@ export function limpiar() {
   for (const f of ["#equipoForm", "#borrarEjForm"]) $(f)?.reset();
 }
 
-const MSG_USUARIO = "El usuario lleva de 3 a 30 caracteres: letras sin tildes, números, punto, guion o guion bajo.";
 // Lo que dice el aviso al volver de Zoom (el servidor devuelve a #a/ajustes?zoom=ok|error|cancelado).
 const AVISO_ZOOM = {
   ok: "Zoom quedó conectado.",
@@ -33,7 +32,7 @@ const DIALOGOS = {
     <div class="dlg-body">
       <div class="dlg-head"><span class="dlg-ic info">${ic("user")}</span><h2 id="eqTitulo">Agregar persona del equipo</h2></div>
       <div class="field"><label class="label" for="eqNombres">Nombres y apellidos</label><input class="input" id="eqNombres" maxlength="80" autocomplete="off" aria-describedby="eqNombresErr"><p class="err" id="eqNombresErr" hidden></p></div>
-      <div class="field"><label class="label" for="eqUsuario">Usuario</label><input class="input" id="eqUsuario" maxlength="30" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Ej.: maria.perez" aria-describedby="eqUsuarioHint eqUsuarioErr"><p class="hint" id="eqUsuarioHint">Con este usuario entra al panel del equipo. Letras sin tildes, números, punto, guion o guion bajo.</p><p class="err" id="eqUsuarioErr" hidden></p></div>
+      <div class="field"><label class="label" for="eqCorreo">Correo</label><input class="input" id="eqCorreo" type="email" inputmode="email" maxlength="120" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="nombre@gmail.com" aria-describedby="eqCorreoHint eqCorreoErr"><p class="hint" id="eqCorreoHint">Con este correo y su clave entra al panel del equipo. Puede ser personal.</p><p class="err" id="eqCorreoErr" hidden></p></div>
       <p class="hint">Al crear la cuenta te mostramos su clave temporal para que se la envíes. La primera vez que entre le pediremos crear su propia clave.</p>
     </div>
     <div class="dlg-foot"><button type="button" class="btn btn-ghost" data-act="cerrar">Cancelar</button><button class="btn btn-primary" type="submit">${ic("plus")}Crear cuenta</button></div>
@@ -103,7 +102,7 @@ function filaPersona(m, yoId) {
           ? `<button type="button" class="btn btn-ghost btn-sm btn-state" data-act="reactivar" data-id="${m.userId}">${ic("check")}Reactivar<span class="vh"> la cuenta de ${esc(m.nombres)}</span></button>`
           : `<button type="button" class="btn btn-ghost btn-sm btn-warn btn-state" data-act="suspender" data-id="${m.userId}">${ic("ban")}Suspender<span class="vh"> la cuenta de ${esc(m.nombres)}</span></button>`}`;
   return `<tr data-equipo="${m.userId}" class="${susp ? "is-susp" : ""} ${m.userId === filaNueva ? "is-new" : ""}">
-      <td class="c-who"><div class="who"><span class="ava ava-team">${esc(iniciales(m.nombres))}</span><div><b>${esc(m.nombres)}${propia ? ' <span class="tag">Tú</span>' : ""}</b><span class="m-meta">${esc(m.usuario || "")}</span></div></div></td>
+      <td class="c-who"><div class="who"><span class="ava ava-team">${esc(iniciales(m.nombres))}</span><div><b>${esc(m.nombres)}${propia ? ' <span class="tag">Tú</span>' : ""}</b><span class="m-meta">${esc(m.correo || m.usuario || "")}</span></div></div></td>
       <td data-l="Último ingreso">${m.ultimoIngreso ? esc(cap(haceCuanto(m.ultimoIngreso))) : '<span class="nunca">Nunca</span>'}</td>
       <td>${susp ? '<span class="pill pill-bad">Suspendida</span>' : '<span class="pill pill-ok">Activa</span>'}</td>
       <td class="c-act"><div class="row-actions">${propia ? "" : acciones}</div></td></tr>`;
@@ -114,7 +113,7 @@ function equipoSeccion() {
   const yoId = estado.yo?.userId;
   const lista = equipoJump().sort((x, y) => (y.userId === yoId) - (x.userId === yoId) || Date.parse(x.creadoEn) - Date.parse(y.creadoEn));
   return `<section class="panel aj aj-team" aria-labelledby="t-eq">
-    <header class="aj-head"><div><h2 id="t-eq">Equipo de JUMP</h2><p>${plural(lista.length, "persona entra", "personas entran")} al panel con su usuario. Aquí creas sus cuentas, les das una clave nueva o las suspendes.</p></div>
+    <header class="aj-head"><div><h2 id="t-eq">Equipo de JUMP</h2><p>${plural(lista.length, "persona entra", "personas entran")} al panel con su correo. Aquí creas sus cuentas, les das una clave nueva o las suspendes.</p></div>
       <button type="button" class="btn btn-ghost" data-act="equipoagregar">${ic("plus")}Agregar persona del equipo</button></header>
     <div class="table-wrap"><table class="rtable">
       <thead><tr><th>Persona</th><th>Último ingreso</th><th>Cuenta</th><th><span class="vh">Acciones</span></th></tr></thead>
@@ -175,18 +174,18 @@ async function vAjustes({ query }) {
 
 // ---------- acciones ----------
 async function enviarEquipo(f, btn) {
-  const u = $("#eqUsuario"), n = $("#eqNombres");
-  const usuario = u.value.trim().toLowerCase(), nombres = normNombre(n.value);
+  const c = $("#eqCorreo"), n = $("#eqNombres");
+  const correo = c.value.trim().toLowerCase(), nombres = normNombre(n.value);
   fieldErr(n, nombres ? "" : "Escribe nombre y apellido.");
-  fieldErr(u, !usuario ? "Escribe el usuario." : !usuarioValido(usuario) ? MSG_USUARIO
-    : equipoJump().some((m) => m.usuario === usuario) ? "Ya existe una cuenta con ese usuario." : "");
+  fieldErr(c, !correo ? "Escribe el correo." : !correoValido(correo) ? "Revisa el correo: debe ser como nombre@gmail.com."
+    : equipoJump().some((m) => m.correo === correo) ? "Ya existe una cuenta con ese correo." : "");
   const malo = f.querySelector('[aria-invalid="true"]');
   if (malo) return malo.focus();
   let r;
   try {
-    r = await ocupado(btn, datos.crearAdmin({ usuario, nombres }));
+    r = await ocupado(btn, datos.crearAdmin({ correo, nombres }));
   } catch (e) {
-    const campo = { usuario: u, nombres: n }[e.campo];
+    const campo = { correo: c, nombres: n }[e.campo];
     if (campo) { fieldErr(campo, e.mensaje); return campo.focus(); }
     throw e;
   }
@@ -195,7 +194,7 @@ async function enviarEquipo(f, btn) {
   filaNueva = r.userId;
   invalidar();
   refrescar();
-  mostrarClave({ rol: "admin", usuario, nombres }, r.clave, true);
+  mostrarClave({ rol: "admin", correo, nombres }, r.clave, true);
 }
 
 async function enviarZoomOff(f, btn) {

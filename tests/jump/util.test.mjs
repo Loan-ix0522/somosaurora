@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 process.env.JUMP_SECRET = "x".repeat(40);
-const { cedulaValida, limpiarCedula, usuarioValido, correoEmprendedor, correoEquipo } = await import("../../jump/comunidad/js/cedula.js");
+const { cedulaValida, limpiarCedula, correoValido, usuarioDesdeCorreo, correoEmprendedor } = await import("../../jump/comunidad/js/cedula.js");
 const { whatsapp, texto, nombre } = await import("../../api/_jump/normalizar.js");
 const { cifrar, descifrar, firmar, verificar, claveTemporal, errorDeClave, esUuid } = await import("../../api/_jump/secretos.js");
 const { mismoOrigen, json } = await import("../../api/_jump/http.js");
@@ -29,13 +29,26 @@ test("cédulas válidas e inválidas", () => {
   assert.equal(cedulaValida(""), false);
 });
 
-test("limpiarCedula y correos internos", () => {
+test("limpiarCedula y correo interno del emprendedor", () => {
   assert.equal(limpiarCedula("091-234 5675"), "0912345675");
-  assert.equal(correoEmprendedor("0912345675"), "c0912345675@cuentas.laauroraescucha.com");
-  assert.equal(correoEquipo("Ana.Admin"), "ana.admin@equipo.laauroraescucha.com");
-  assert.equal(usuarioValido("ana.admin"), true);
-  assert.equal(usuarioValido("ab"), false);
-  assert.equal(usuarioValido("Ana Admin"), false);
+  assert.equal(correoEmprendedor("0912345675"), "c0912345675@laauroraescucha.com");
+});
+
+test("correoValido acepta correos normales y rechaza lo demás", () => {
+  for (const c of ["ana@gmail.com", "ana.torres+jump@outlook.com", "a@b.co"]) assert.equal(correoValido(c), true, c);
+  for (const c of ["", "ana", "ana@", "@gmail.com", "ana@gmail", "ana perez@gmail.com", "a@b@c.com", `${"a".repeat(120)}@x.com`])
+    assert.equal(correoValido(c), false, c);
+});
+
+test("usuarioDesdeCorreo saca un usuario interno válido del correo", () => {
+  const ok = (u) => /^[a-z0-9._-]{3,30}$/.test(u);
+  assert.equal(usuarioDesdeCorreo("Ana.Torres@Gmail.com"), "ana.torres");
+  assert.equal(usuarioDesdeCorreo("María.Pérez+jump@gmail.com"), "maria.perez-jump", "sin tildes y el + pasa a guion");
+  assert.equal(usuarioDesdeCorreo("al@x.com"), "al-jump", "de menos de 3 caracteres se completa");
+  assert.equal(usuarioDesdeCorreo("+++@x.com"), "equipo-jump", "sin nada aprovechable");
+  const largo = usuarioDesdeCorreo(`${"a".repeat(50)}@x.com`);
+  assert.equal(largo.length, 30);
+  for (const c of ["ana@x.com", "ñandú@x.com", "a.b@x.com", "x_y-z@x.com", "$$$tony$$$@x.com", "ab@x.com", `${"z".repeat(80)}@x.com`]) assert.ok(ok(usuarioDesdeCorreo(c)), c);
 });
 
 test("whatsapp normaliza formatos de Ecuador", () => {

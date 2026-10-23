@@ -30,12 +30,20 @@ JUMP tiene su **propio proyecto de Supabase**, separado del de La Aurora Escucha
 
 ## 3. Crear el primer administrador
 
+El equipo entra con su **correo real y su clave**, como en cualquier sitio (puede ser un correo personal). Los emprendedores, en cambio, entran con su cédula.
+
 1. **Authentication → Users → Add user → Create new user**:
-   - Email: `tuusuario@equipo.laauroraescucha.com` (usuario en minúsculas, números, punto o guion).
-   - Password: la que vayas a usar.
+   - Email: el correo real de quien va a administrar.
+   - Password: la clave que vaya a usar.
    - Marca **Auto Confirm User**.
-2. Abre el final del archivo `supabase/jump/0001_comunidad_jump.sql` (sección «9. PRIMER ADMIN DE JUMP»). Cambia `TU_USUARIO` y `TU NOMBRE`, quita los `--` de las tres líneas del `insert` y corre **solo eso** en el SQL Editor.
-3. Ese usuario ya puede entrar como **Equipo JUMP** (paso 5) y agregar al resto del equipo desde **Ajustes → Agregar persona del equipo**.
+2. En **SQL Editor → New query** corre **solo esto**, cambiando `EL_CORREO` (el mismo del punto anterior) y `TU NOMBRE`. Es la plantilla de la sección «9. PRIMER ADMIN DE JUMP» al final de `supabase/jump/0001_comunidad_jump.sql`:
+
+   ```sql
+   insert into public.jump_miembros (user_id, rol, usuario, nombres, correo, debe_cambiar_clave)
+   select id, 'admin', 'admin.jump', 'TU NOMBRE', email, false from auth.users
+    where email = 'EL_CORREO';
+   ```
+3. Esa persona ya puede entrar como **Equipo JUMP** (paso 5) y agregar al resto del equipo desde **Ajustes → Agregar persona del equipo** (con el correo real de cada una).
 
 ## 4. Variables en Vercel y dirección de la base en la CSP
 
@@ -68,7 +76,7 @@ JUMP tiene su **propio proyecto de Supabase**, separado del de La Aurora Escucha
 
 ## 5. Entrar y cargar los datos de ejemplo
 
-1. Abre `https://www.laauroraescucha.com/jump/comunidad/`, pulsa **Equipo JUMP** e ingresa con el usuario y la clave del paso 3.
+1. Abre `https://www.laauroraescucha.com/jump/comunidad/`, pulsa **Equipo JUMP** e ingresa con el correo y la clave del paso 3.
 2. Ve a **Ajustes → Datos de ejemplo → Cargar datos de ejemplo**. Se crean personas, mentorías, módulos, clases, avisos y publicaciones **de mentira**, para poder enseñar la plataforma completa.
 3. Mientras existan, el panel muestra una franja que dice «Hay datos de ejemplo cargados» con el botón **Borrar ejemplos**.
 
@@ -126,8 +134,8 @@ El plan gratis de Supabase da **1 GB** de archivos por proyecto. Lo que ocupa es
 |---|---|
 | La pantalla de entrada dice que no se puede conectar | Faltan las variables `JUMP_*` en Vercel, o no hiciste el Redeploy (paso 4). |
 | La entrada carga pero «Entrar» no hace nada y la consola del navegador habla de «Content Security Policy» | Falta cambiar `JUMP_SUPABASE_HOST` en `scripts/csp.mjs` y regenerar `vercel.json` (paso 4.2). |
-| «Usuario o clave incorrecta.» con el admin recién creado | Revisa que marcaste **Auto Confirm User** y que corriste el `insert` del paso 3 con el mismo usuario del correo. |
-| Al crear una cuenta, Supabase responde `email_address_invalid` | Cada persona tiene un correo interno (`…@equipo.laauroraescucha.com` para el equipo y `…@cuentas.laauroraescucha.com` para emprendedores) que nunca recibe mensajes. Si el Auth de Supabase llegara a rechazar esos dominios, avísale a quien mantiene el sitio: hay que cambiar el dominio en `jump/comunidad/js/cedula.js`. (No se pudo probar contra un Supabase real, solo contra el simulado.) |
+| «Correo o clave incorrecta.» con el admin recién creado | Revisa que marcaste **Auto Confirm User**, que corriste el `insert` del paso 3 con el mismo correo y que lo escribes igual que en **Authentication → Users**. |
+| Al agregar un emprendedor, Supabase responde `email_address_invalid` | El equipo usa su correo real; los emprendedores entran con su cédula y, como Supabase pide un correo por cuenta, cada uno lleva uno interno (`c<cédula>@laauroraescucha.com`) que nadie lee ni recibe mensajes. Si Supabase rechazara ese formato, avísale a quien mantiene el sitio: se cambia en una línea (`DOMINIO_CEDULA` en `jump/comunidad/js/cedula.js`). Eso no se pudo probar contra un Supabase real, solo contra el simulado. |
 | Una persona nueva dice que su cuenta está suspendida | Está suspendida en **Emprendedores**; reactívala desde ahí. |
 | Zoom: «No se pudo conectar Zoom. Intenta de nuevo.» | Revisa que la OAuth Redirect URL de la app de Zoom sea idéntica a `…/api/jump-zoom-callback` y que `JUMP_PUBLIC_URL` no tenga barra al final. |
 | Las pruebas de seguridad | `docs/loanix/SECURITY.md`, sección «Comunidad JUMP», lista cada caso de abuso con su prueba. |

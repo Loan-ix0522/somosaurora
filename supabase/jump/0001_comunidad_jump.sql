@@ -644,9 +644,10 @@ create policy jump_muro_borrar on storage.objects
 -- 9. PRIMER ADMIN DE JUMP (EDITA Y CORRE APARTE, UNA SOLA VEZ)
 -- ============================================================
 -- a) Authentication → Users → Add user → Create new user:
---      correo:  TU_USUARIO@equipo.laauroraescucha.com   (TU_USUARIO: minúsculas, números, punto o guion)
+--      correo:  el correo real de quien administra (puede ser personal).
 --      clave:   la que vayas a usar · marca "Auto Confirm User".
--- b) Cambia TU_USUARIO y TU NOMBRE abajo, quita los "--" de las 3 líneas y corre solo eso:
--- insert into public.jump_miembros (user_id, rol, usuario, nombres, debe_cambiar_clave)
--- select id, 'admin', 'TU_USUARIO', 'TU NOMBRE', false from auth.users
---  where email = 'TU_USUARIO@equipo.laauroraescucha.com';
+-- b) Cambia EL_CORREO (el mismo de arriba) y TU NOMBRE abajo, quita los "--" de las 3 líneas y corre solo eso:
+-- insert into public.jump_miembros (user_id, rol, usuario, nombres, correo, debe_cambiar_clave)
+-- select id, 'admin', 'admin.jump', 'TU NOMBRE', email, false from auth.users
+--  where email = 'EL_CORREO';
+-- ("usuario" es un dato interno que nadie escribe: la persona entra con su correo y su clave.)

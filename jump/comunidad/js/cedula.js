@@ -1,8 +1,8 @@
-// Cédula ecuatoriana y usuarios del equipo. Lo usan la página y la API (mismo archivo).
-// Las cuentas de Supabase usan un correo interno que nadie lee: el emprendedor solo escribe su cédula.
+// Cédula ecuatoriana y correos. Lo usan la página y la API (mismo archivo).
+// El equipo entra con su correo real. El emprendedor solo escribe su cédula: su cuenta de Supabase
+// lleva un correo interno que nadie lee ni recibe mensajes (Supabase pide un correo por cuenta).
 
-export const DOMINIO_CEDULA = "cuentas.laauroraescucha.com";
-export const DOMINIO_EQUIPO = "equipo.laauroraescucha.com";
+export const DOMINIO_CEDULA = "laauroraescucha.com";
 
 export const limpiarCedula = (s) => String(s ?? "").replace(/\D/g, "");
 
@@ -21,6 +21,19 @@ export function cedulaValida(c) {
   return (10 - (suma % 10)) % 10 === +c[9];
 }
 
-export const usuarioValido = (u) => /^[a-z0-9._-]{3,30}$/.test(String(u ?? ""));
+export const correoValido = (c) => {
+  const v = String(c ?? "");
+  return v.length <= 120 && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v);
+};
+
+// jump_miembros pide un "usuario" interno (3 a 30: minúsculas, números, punto, guion o guion bajo).
+// Nadie lo escribe: sale de lo que va antes de la @ del correo.
+export function usuarioDesdeCorreo(correo) {
+  const local = String(correo ?? "").split("@")[0];
+  const limpio = local.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+    .replace(/[^a-z0-9._-]/g, "-").replace(/-{2,}/g, "-").replace(/^-|-$/g, "").slice(0, 30);
+  if (!limpio) return "equipo-jump";
+  return limpio.length < 3 ? `${limpio}-jump` : limpio;
+}
+
 export const correoEmprendedor = (cedula) => `c${cedula}@${DOMINIO_CEDULA}`;
-export const correoEquipo = (usuario) => `${String(usuario).trim().toLowerCase()}@${DOMINIO_EQUIPO}`;

@@ -100,6 +100,8 @@ p{margin:0}
 .seg .n{font-variant-numeric:tabular-nums;color:var(--ink-3);font-weight:600}
 .seg-block{display:flex}
 .seg-block button{flex:1}
+/* Cuatro opciones (Postulaciones): en angosto van en dos filas de dos, sin cortarse. */
+@media (max-width:560px){.seg-4{display:grid;grid-template-columns:1fr 1fr;width:100%}}
 .pill{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:99px;font:700 12.5px/1 var(--font);white-space:nowrap}
 .pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
 .pill-ok{background:var(--ok-50);color:var(--ok)}
@@ -323,7 +325,7 @@ p{margin:0}
   .rtable td[data-l]::before{content:attr(data-l) " · ";color:var(--ink-3);font-size:13px}
   .rtable td.c-who{grid-column:1/-1}
   .rtable td.c-act{grid-column:1/-1}
-  .rtable .row-actions{justify-content:flex-start}
+  .rtable .row-actions{justify-content:flex-start;flex-wrap:wrap}
   .rtable .row-actions .lbl{position:static;width:auto;height:auto;overflow:visible;clip:auto}
 }
 table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
@@ -338,6 +340,9 @@ tr.is-new{animation:newrow 2.4s var(--ease-out)}
 .who{display:flex;align-items:center;gap:12px;min-width:200px}
 .who b{display:block;font-size:14.5px;line-height:1.3}
 .who .m-meta{display:block;font-size:13px}
+.tel{white-space:nowrap}
+.post-llego{display:block;margin-top:5px}
+.lbl-ficha{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .row-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px}
 .row-actions .btn-state{min-width:124px}
 .td-prog{min-width:150px}

@@ -23,6 +23,7 @@ export async function cargar() {
   if (!A || A.viejo || A.yo.userId !== estado.yo?.userId) {
     A = await datos.cargarAdmin();
     estado.yo = { ...estado.yo, ...A.yo };
+    estado.postulacionesNuevas = A.postulacionesNuevas || 0;
   }
   return A;
 }
@@ -120,6 +121,8 @@ async function vResumen() {
     pend.push(todo("video", false, `La clase del <b>${esc(fechaCorta(x.iniciaEn).toLowerCase())}</b> no tiene grabación.`, "#a/clases", "Agregar grabación"));
   if (A.zoom.configurada && !A.zoom.conectada)
     pend.push(todo("link", false, "Conecta la cuenta de Zoom para crear las reuniones desde el panel.", "#a/ajustes", "Ir a Ajustes"));
+  if (estado.postulacionesNuevas)
+    pend.unshift(todo("mail", true, `Llegaron <b>${plural(estado.postulacionesNuevas, "postulación nueva", "postulaciones nuevas")}</b> desde la página de JUMP.`, "#a/postulaciones", "Revisar postulaciones"));
   const feed = actividad();
   return {
     titulo: "Resumen",
@@ -456,6 +459,18 @@ export function mostrarClave(persona, clave, creada) {
   $("#dlgClave").showModal();
 }
 
+// Abre "Agregar emprendedor". `datos` llena lo que ya se sabe (p. ej. de una postulación) y el foco va al primer campo vacío.
+export function abrirAgregar(datos = {}) {
+  prepararDialogos();
+  const f = $("#addForm");
+  f.reset();
+  $$("#addForm [aria-invalid]").forEach((i) => fieldErr(i, ""));
+  const campos = { adNombres: datos.nombres, adCedula: "", adWa: datos.whatsapp, adNegocio: datos.negocio };
+  for (const [id, v] of Object.entries(campos)) $("#" + id).value = v || "";
+  $("#dlgAdd").showModal();
+  (Object.keys(campos).map((id) => $("#" + id)).find((i) => !i.value) || $("#adNombres")).focus();
+}
+
 async function enviarAgregar(f, btn) {
   const n = $("#adNombres"), c = $("#adCedula"), w = $("#adWa"), co = $("#adCorreo"), ne = $("#adNegocio");
   const nombres = normNombre(n.value), cedula = limpiarCedula(c.value), crudoWa = w.value.trim(), wa = crudoWa ? normWhatsapp(crudoWa) : "";
@@ -586,14 +601,7 @@ export const rutas = [
 
 export const acciones = {
   cerrar: (b) => b.closest("dialog")?.close(),
-  agregar: () => {
-    prepararDialogos();
-    const f = $("#addForm");
-    f.reset();
-    $$("#addForm [aria-invalid]").forEach((i) => fieldErr(i, ""));
-    $("#dlgAdd").showModal();
-    $("#adNombres").focus();
-  },
+  agregar: () => abrirAgregar(),
   efiltro: (b) => {
     filtroE = b.dataset.f;
     $$('[data-act="efiltro"]').forEach((x) => x.setAttribute("aria-pressed", String(x === b)));

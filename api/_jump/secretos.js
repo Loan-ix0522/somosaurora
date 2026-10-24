@@ -46,6 +46,12 @@ export async function verificar(token) {
   }
 }
 
+// Huella de una conexión (para frenar envíos repetidos) sin guardar la IP: HMAC con una clave derivada de JUMP_SECRET.
+export async function huellaIp(ip) {
+  const k = await crypto.subtle.importKey("raw", await derivar("ip"), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return b64u(await crypto.subtle.sign("HMAC", k, enc.encode(String(ip ?? "")))).slice(0, 32);
+}
+
 // Número al azar en [0, n) sin sesgo (muestreo por rechazo).
 function azar(n) {
   const limite = Math.floor(0x100000000 / n) * n;

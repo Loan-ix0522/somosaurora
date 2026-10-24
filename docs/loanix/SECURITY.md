@@ -89,7 +89,7 @@ Superficie nueva: la app `jump/comunidad/` (HTML estático + módulos), cinco fu
 - **CSP de `/jump`** (generada por `scripts/csp.mjs`): solo habla con la base de JUMP; la de La Aurora no cambió.
 
 ### Casos de abuso → prueba → resultado
-Las pruebas unitarias corren contra un simulador de Supabase con Postgres real (PGlite: RLS, Auth y Storage) y las de pantalla contra un Chrome real (`tests/jump/ui/cdp.mjs`, escritorio y móvil). Última corrida: **109/109** unitarias y **112/112** escenarios de pantalla (consola sin errores). Los nombres son los de la prueba, tal como salen en `node --test`.
+Las pruebas unitarias corren contra un simulador de Supabase con Postgres real (PGlite: RLS, Auth y Storage) y las de pantalla contra un Chrome real (`tests/jump/ui/cdp.mjs`, escritorio y móvil). Última corrida (2026-10-23, con postulaciones): **130/130** unitarias y **134/134** escenarios de pantalla (consola sin errores). Los nombres son los de la prueba, tal como salen en `node --test`.
 
 | Caso de abuso | Prueba | Resultado |
 |---|---|---|
@@ -133,6 +133,27 @@ Las pruebas unitarias corren contra un simulador de Supabase con Postgres real (
 - **Datos de ejemplo y reales conviven** en el mismo proyecto (cada fila de ejemplo está marcada `es_ejemplo` y el panel muestra una franja mientras existan). Antes de cargar datos reales: borrar los ejemplos (la guía lo pide).
 - **La CSP de `/jump` solo deja hablar con la base de JUMP** (`JUMP_SUPABASE_HOST` en `scripts/csp.mjs`, hoy `https://yibbjwpitawmfnrnyjek.supabase.co`, el proyecto creado el 2026-10-21). Si esa dirección no coincide con el proyecto real, no deja hablar con ninguna base: falla cerrado. Si se cambia de proyecto, hay que editarla y correr `node scripts/csp.mjs`.
 - **Aviso de «hecho» en pantalla.** Es cosmético (el aviso muestra siempre el mismo ícono, también para rechazos); no afecta la seguridad.
+
+### Postulaciones desde la página de JUMP (2026-10-23)
+Superficie nueva: el formulario «Postula» de `/jump/` (público, sin sesión) → `POST /api/jump-postular` (Edge, `service_role`) → tabla `jump_postulaciones` (`supabase/jump/0002_postulaciones.sql`), y la vista **Postulaciones** del panel del equipo. Datos personales: nombres y WhatsApp de quien postula, su emprendimiento y su sector.
+
+- **Nadie escribe directo en la base.** Ni `anon` ni `authenticated` tienen `INSERT`; solo la API, que valida cada campo con las mismas reglas que la tabla (largos, celular `09xxxxxxxx`, listas cerradas de rubro y RUC). La tabla vuelve a revisarlo con sus `check`.
+- **Freno a abusos.** Solo desde el mismo sitio, cuerpo de hasta 4 KB, campo trampa para robots, hasta 5 postulaciones por conexión cada 24 h y el mismo WhatsApp no se duplica. La conexión se guarda como huella HMAC (clave derivada de `JUMP_SECRET`), nunca la IP.
+- **Quién ve qué.** Solo un admin activo (`jump_es_admin()`) las lee, cambia su estado (solo esa columna) o las borra. La huella de la conexión no se puede leer desde el navegador (permiso por columna).
+- **Texto como texto.** Lo que escribe quien postula pasa por `esc()` en el panel y el enlace de WhatsApp se arma con el número ya normalizado.
+- **Privacidad.** El formulario enlaza a la sección «postulaciones» de `jump/comunidad/privacidad.html` (qué se guarda, quién lo ve, para qué y cómo pedir que se borre). El panel recuerda usarlas solo para la convocatoria y permite borrarlas.
+
+| Caso de abuso | Prueba | Resultado |
+|---|---|---|
+| Escribir postulaciones directo en la base, sin pasar por la API | «desde el navegador nadie crea postulaciones (solo la API, con service_role)» | Rechazado |
+| Leer las postulaciones sin ser del equipo | «anon, emprendedores, suspendidas y cuentas en primer ingreso no las ven» | Nada visible |
+| Sacar la huella de la conexión o cambiar los datos de quien postuló | «el equipo las ve, pero no el hash de la conexión»; «el equipo cambia el estado, pero no los datos de la persona» | Solo nombres, contacto y estado; solo cambia el estado |
+| Borrar postulaciones sin ser del equipo | «el equipo borra una postulación; un emprendedor no» | Rechazado |
+| Enviar desde otro sitio o datos fuera de forma | «solo POST y solo desde este mismo sitio»; «cada dato inválido responde 400 con su campo»; «la base rechaza datos fuera de forma aunque vengan con service_role» | 403 / 400 por campo; la tabla también lo rechaza |
+| Llenar la tabla con robots o envíos en masa | «el campo trampa para robots responde ok pero no guarda nada»; «más de 5 postulaciones en un día desde la misma conexión → 429»; «el mismo WhatsApp otra vez no se duplica»; pantalla `landing-limite` | No se guarda; 429 con aviso en la página |
+| Guardar la IP de quien postula | «una postulación válida se guarda normalizada y sin la IP cruda» | Solo una huella HMAC |
+
+Riesgo aceptado: el límite por conexión se salta cambiando de IP; si llega spam de verdad, el paso siguiente es Turnstile (ya listado en «Pendiente»). El equipo puede borrar lo que llegue.
 
 ## Pendiente / riesgos aceptados
 - Turnstile (o equivalente) si el spam supera a las capas actuales.

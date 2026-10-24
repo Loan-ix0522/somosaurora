@@ -171,6 +171,10 @@ export async function iniciarSim({ puerto = 0, raiz = RAIZ_REPO, db = null } = {
     const where = filtros(p, vals);
     const devolver = prefer.includes("return=representation");
     const contar = prefer.includes("count=exact");
+    // Como PostgREST: con return=minimal (lo que manda supabase-js v2 si no hay .select()) la escritura usa
+    // RETURNING 1, así que no hace falta permiso de lectura sobre todas las columnas (p. ej. ip_hash de postulaciones).
+    const devuelve = devolver ? "*" : "1";
+    const leer = devolver ? cols : "1 as _";
     let sql;
 
     if (req.method === "GET" || req.method === "HEAD") {
@@ -189,8 +193,8 @@ export async function iniciarSim({ puerto = 0, raiz = RAIZ_REPO, db = null } = {
           : ` on conflict (${cc.join(", ")}) do update set ${claves.filter((c) => !cc.includes(c)).map((c) => `${c} = excluded.${c}`).join(", ") || cc.map((c) => `${c} = excluded.${c}`).join(", ")}`;
       }
       sql = `with x as (insert into public.${tabla} (${claves.join(", ")})
-               select ${claves.join(", ")} from json_populate_recordset(null::public.${tabla}, $${vals.length}::json)${conflicto} returning *)
-             select coalesce(json_agg(t), '[]'::json) as v from (select ${cols} from x) t`;
+               select ${claves.join(", ")} from json_populate_recordset(null::public.${tabla}, $${vals.length}::json)${conflicto} returning ${devuelve})
+             select coalesce(json_agg(t), '[]'::json) as v from (select ${leer} from x) t`;
     } else if (req.method === "PATCH") {
       const fila = JSON.parse(cuerpo || "{}");
       const claves = Object.keys(fila);
@@ -198,10 +202,10 @@ export async function iniciarSim({ puerto = 0, raiz = RAIZ_REPO, db = null } = {
       vals.push(JSON.stringify(fila));
       const n = vals.length;
       const asignar = claves.map((c) => `${c} = (select r.${c} from json_populate_record(null::public.${tabla}, $${n}::json) r)`);
-      sql = `with x as (update public.${tabla} set ${asignar.join(", ")}${where} returning *)
-             select coalesce(json_agg(t), '[]'::json) as v from (select ${cols} from x) t`;
+      sql = `with x as (update public.${tabla} set ${asignar.join(", ")}${where} returning ${devuelve})
+             select coalesce(json_agg(t), '[]'::json) as v from (select ${leer} from x) t`;
     } else if (req.method === "DELETE") {
-      sql = `with x as (delete from public.${tabla}${where} returning *) select coalesce(json_agg(t), '[]'::json) as v from (select ${cols} from x) t`;
+      sql = `with x as (delete from public.${tabla}${where} returning ${devuelve}) select coalesce(json_agg(t), '[]'::json) as v from (select ${leer} from x) t`;
     } else throw new ErrorHttp(405, { message: "método no permitido" });
 
     let filas, total = null;

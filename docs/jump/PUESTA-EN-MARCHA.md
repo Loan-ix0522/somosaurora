@@ -24,7 +24,8 @@ JUMP tiene su **propio proyecto de Supabase**, separado del de La Aurora Escucha
 
 1. En el proyecto de JUMP abre **SQL Editor → New query**.
 2. Pega **todo** el archivo `supabase/jump/0001_comunidad_jump.sql` y pulsa **Run**.
-3. Se puede correr más de una vez sin problema. Debe terminar con «Success».
+3. En otra consulta nueva pega **todo** `supabase/jump/0002_postulaciones.sql` y pulsa **Run**. Crea la tabla de las postulaciones que llegan desde el formulario «Postula» de la página de JUMP (`/jump/`); el equipo las ve en **Postulaciones**.
+4. Las dos se pueden correr más de una vez sin problema. Deben terminar con «Success».
 
 > No lo pegues en el proyecto de La Aurora Escucha. Debe ir en el proyecto de JUMP.
 
@@ -136,6 +137,7 @@ El plan gratis de Supabase da **1 GB** de archivos por proyecto. Lo que ocupa es
 | La entrada carga pero «Entrar» no hace nada y la consola del navegador habla de «Content Security Policy» | Falta cambiar `JUMP_SUPABASE_HOST` en `scripts/csp.mjs` y regenerar `vercel.json` (paso 4.2). |
 | «Correo o clave incorrecta.» con el admin recién creado | Revisa que marcaste **Auto Confirm User**, que corriste el `insert` del paso 3 con el mismo correo y que lo escribes igual que en **Authentication → Users**. |
 | Al agregar un emprendedor, Supabase responde `email_address_invalid` | El equipo usa su correo real; los emprendedores entran con su cédula y, como Supabase pide un correo por cuenta, cada uno lleva uno interno (`c<cédula>@laauroraescucha.com`) que nadie lee ni recibe mensajes. Si Supabase rechazara ese formato, avísale a quien mantiene el sitio: se cambia en una línea (`DOMINIO_CEDULA` en `jump/comunidad/js/cedula.js`). Eso no se pudo probar contra un Supabase real, solo contra el simulado. |
+| **Postulaciones** dice «Las postulaciones todavía no están activadas», o el formulario de `/jump/` responde «No se pudo enviar» | Falta correr `supabase/jump/0002_postulaciones.sql` en el proyecto de JUMP (paso 2.3). |
 | Una persona nueva dice que su cuenta está suspendida | Está suspendida en **Emprendedores**; reactívala desde ahí. |
 | Zoom: «No se pudo conectar Zoom. Intenta de nuevo.» | Revisa que la OAuth Redirect URL de la app de Zoom sea idéntica a `…/api/jump-zoom-callback` y que `JUMP_PUBLIC_URL` no tenga barra al final. |
 | Las pruebas de seguridad | `docs/loanix/SECURITY.md`, sección «Comunidad JUMP», lista cada caso de abuso con su prueba. |

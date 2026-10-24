@@ -8,11 +8,12 @@ import * as admin from "./vistas-admin.js";
 import * as editor from "./vistas-editor.js";
 import * as muro from "./vistas-muro.js";
 import * as ajustes from "./vistas-ajustes.js";
+import * as postulaciones from "./vistas-postulaciones.js";
 
-export const estado = { yo: null, avisosNuevos: 0, mensajeIngreso: "" };
+export const estado = { yo: null, avisosNuevos: 0, postulacionesNuevas: 0, mensajeIngreso: "" };
 const ACT = {}, ENVIOS = {}, ENTRADAS = {}, CAMBIOS = {}, RUTAS = [];
 // Cada módulo de vistas aporta { rutas, acciones, envios, entradas, cambios, limpiar }.
-const MODULOS = [ingreso, emprendedor, admin, editor, muro, ajustes];
+const MODULOS = [ingreso, emprendedor, admin, editor, muro, ajustes, postulaciones];
 const MSG_SUSPENDIDA = "Tu cuenta está suspendida. Escríbele al equipo de JUMP.";
 const MSG_SESION = "Tu sesión venció. Vuelve a entrar.";
 
@@ -28,6 +29,7 @@ export function ir(hash) { if (location.hash === "#" + hash) render(); else loca
 export async function cerrarSesion(mensaje = "") {
   estado.yo = null;
   estado.avisosNuevos = 0;
+  estado.postulacionesNuevas = 0;
   for (const m of MODULOS) m.limpiar?.(); // nada de lo cargado queda para la próxima persona
   await datos.salir();
   estado.mensajeIngreso = mensaje;
@@ -41,13 +43,14 @@ const MENU = {
   e: [["e/inicio", "home", "Inicio", "Inicio"], ["e/mentorias", "play", "Mentorías", "Mentorías"], ["e/clases", "video", "Clases en vivo", "Clases"],
     ["e/muro", "chat", "Comunidad", "Comunidad"], ["e/avisos", "mega", "Avisos", "Avisos"], ["e/perfil", "user", "Mi perfil", null]],
   a: [["a/resumen", "grid", "Resumen", "Resumen"], ["a/mentorias", "play", "Mentorías", "Mentorías"], ["a/clases", "video", "Clases en vivo", "Clases"],
-    ["a/emprendedores", "users", "Emprendedores", "Personas"], ["a/muro", "chat", "Comunidad", "Comunidad"], ["a/avisos", "mega", "Avisos", null], ["a/ajustes", "gear", "Ajustes", null]],
+    ["a/emprendedores", "users", "Emprendedores", "Personas"], ["a/postulaciones", "mail", "Postulaciones", null], ["a/muro", "chat", "Comunidad", "Comunidad"],
+    ["a/avisos", "mega", "Avisos", null], ["a/ajustes", "gear", "Ajustes", null]],
 };
 
 export function shell(rol, activo, contenido) {
   const items = MENU[rol], yo = estado.yo || {};
   const home = rol === "e" ? "e/inicio" : "a/resumen";
-  const nuevos = (h) => (h === "e/avisos" ? estado.avisosNuevos : 0);
+  const nuevos = (h) => (h === "e/avisos" ? estado.avisosNuevos : h === "a/postulaciones" ? estado.postulacionesNuevas : 0);
   const actual = (h) => (activo === h ? 'aria-current="page"' : "");
   const quien = `<span class="ava">${esc(iniciales(yo.nombres) || "EJ")}</span><div class="sf-who"><b>${esc(yo.nombres || "Equipo JUMP")}</b><small>${esc(rol === "e" ? yo.negocio || "" : "Equipo JUMP")}</small></div>`;
   const salir = (cls) => `<button type="button" class="icon-btn ${cls}" data-act="salir" aria-label="Salir" title="Salir">${ic("logout")}</button>`;

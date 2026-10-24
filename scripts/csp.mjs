@@ -25,6 +25,8 @@ const ADMIN_PAGES = ["admin/index.html"];
 const JUMP_PAGES = ["jump/comunidad/index.html", "jump/comunidad/privacidad.html"];
 // Videos de las mentorías: solo los reproductores sin cookies de YouTube y el de Vimeo.
 const VIDEO_FRAMES = "https://www.youtube-nocookie.com https://player.vimeo.com";
+// Logos de Consalva Law (padrino de JUMP) que la página /jump/ toma de su propio sitio.
+const CONSALVA_IMG = "https://consalvalaw.com";
 const SUPABASE_HOST = "https://jdterctcniotbipgwcdv.supabase.co"; // La Aurora Escucha (solo el panel /admin)
 // Proyecto de Supabase PROPIO de JUMP (su "Project URL", Settings → API). Si algún día cambia, editarlo aquí y correr este script.
 // Un dominio ".invalid" (que por norma nunca resuelve) dejaría a la Comunidad JUMP sin poder hablar con ninguna base.
@@ -54,7 +56,7 @@ const common = [
 const publicCsp = [...common, `script-src 'self' ${inlineHashes(PUBLIC_PAGES).join(" ")}`, "img-src 'self' data:", "connect-src 'self'"].join("; ");
 const adminCsp = [...common, `script-src 'self' ${inlineHashes(ADMIN_PAGES).join(" ")} ${SUPABASE_JS}`, `img-src 'self' data: ${SUPABASE_HOST}`, `connect-src 'self' ${SUPABASE_HOST}`].join("; ");
 
-const jumpCsp = [...common, `script-src 'self' ${inlineHashes(JUMP_PAGES).join(" ")} ${SUPABASE_JS}`.replace(/ {2,}/g, " "), `img-src 'self' data: blob: ${JUMP_SUPABASE_HOST}`, `connect-src 'self' ${JUMP_SUPABASE_HOST}`, `frame-src ${VIDEO_FRAMES}`, "media-src 'none'"].join("; ");
+const jumpCsp = [...common, `script-src 'self' ${inlineHashes(JUMP_PAGES).join(" ")} ${SUPABASE_JS}`.replace(/ {2,}/g, " "), `img-src 'self' data: blob: ${JUMP_SUPABASE_HOST} ${CONSALVA_IMG}`, `connect-src 'self' ${JUMP_SUPABASE_HOST}`, `frame-src ${VIDEO_FRAMES}`, "media-src 'none'"].join("; ");
 const cspDe = (source) => (source.startsWith("/admin") ? adminCsp : source.startsWith("/jump") ? jumpCsp : publicCsp);
 
 const cfg = JSON.parse(read("vercel.json"));

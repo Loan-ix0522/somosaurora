@@ -168,6 +168,21 @@ const atraparAperturas = () => ev(`(() => {
   return true;
 })()`);
 const desborde = () => ev("document.documentElement.scrollWidth - innerWidth");
+// La página pública de JUMP (/jump/), donde está el formulario «Postula».
+async function abrirLanding() {
+  await send("Page.navigate", { url: "about:blank" });
+  await send("Page.navigate", { url: sim.url + "/jump/#postula" });
+  await esperar(`document.readyState === "complete" && !!document.querySelector("#sendBtn")`); // el módulo ya corrió (va diferido)
+}
+async function llenarPostula({ nombre, wa, negocio, sector, rubro = "Comida y bebidas", ruc = "no" }) {
+  await escribir("#f-nombre", nombre);
+  await escribir("#f-wa", wa);
+  await escribir("#f-negocio", negocio);
+  await ev(`(() => { const s = document.querySelector("#f-rubro"); s.value = ${JSON.stringify(rubro)}; s.dispatchEvent(new Event("change", { bubbles: true })); return true; })()`);
+  await escribir("#f-sector", sector);
+  await clic(`input[name="ruc"][value="${ruc}"]`);
+  await ev(`(() => { const c = document.querySelector("#f-ok"); if (!c.checked) c.click(); return true; })()`);
+}
 // Elige un archivo creado en el navegador: una foto PNG dibujada en un canvas, o un archivo con el contenido dado.
 const elegirArchivo = (sel, { nombre = "feria.png", tipo = "image/png", contenido = null } = {}) => ev(`(async () => {
   let b;
@@ -1142,6 +1157,169 @@ const ESCENARIOS = {
       return csp.length === 0 || csp.join(" | ");
     },
   },
+  postulaciones: {
+    "landing-postula": async () => {
+      await abrirLanding();
+      const ingresar = await ev(`document.querySelector('a[href="/jump/comunidad/"]')?.textContent.trim() || ""`);
+      if (ingresar !== "Ingresar") return "botón Ingresar: " + ingresar;
+      if (await ev(`/Mockup para revisión|Demo del formulario|no envía datos/i.test(document.body.textContent)`)) return "quedó texto de demo";
+      const trampa = await ev(`(() => { const r = document.querySelector('input[name="sitio"]').getBoundingClientRect(); return r.right <= 0 || r.width <= 1; })()`);
+      if (!trampa) return "el campo trampa se ve";
+      await clic("#sendBtn");
+      const err = await esperar(`document.querySelector("#e-nombre").textContent`);
+      if (!err.includes("nombre")) return "error con el formulario vacío: " + err;
+      await llenarPostula({ nombre: "Marta Quiñónez", wa: "099 555 1234", negocio: "Postres Marta", sector: "La Aurora, etapa 2" });
+      await foto("landing-postula-lleno");
+      await clic("#sendBtn");
+      await esperar(`document.querySelector("#form").classList.contains("done")`);
+      const f = await fila("select * from public.jump_postulaciones where whatsapp = '0995551234'");
+      if (!f || f.nombres !== "Marta Quiñónez" || f.negocio !== "Postres Marta" || f.rubro !== "Comida y bebidas" || f.ruc !== "no" || f.estado !== "nueva") return JSON.stringify(f);
+      const ok = await texto("#okTitulo");
+      await foto("landing-postula-enviada");
+      if (!ok.includes("recibida")) return "aviso: " + ok;
+      // El mismo número otra vez (escrito distinto): no se duplica y se le dice que ya la tenemos.
+      await abrirLanding();
+      await llenarPostula({ nombre: "Marta Q.", wa: "+593 99 555 1234", negocio: "Postres Marta", sector: "Etapa 2" });
+      await clic("#sendBtn");
+      await esperar(`document.querySelector("#form").classList.contains("done")`);
+      const otra = await texto("#okTitulo");
+      const n = (await fila("select count(*)::int n from public.jump_postulaciones where whatsapp = '0995551234'")).n;
+      return (otra.includes("Ya teníamos") && n === 1) || JSON.stringify({ otra, n });
+    },
+    "landing-limite": async () => {
+      // Cinco envíos de hoy desde la misma conexión: el sexto se frena y se avisa sin perder lo escrito.
+      const { huellaIp } = await import("../../../api/_jump/secretos.js");
+      const h = await huellaIp(""); // el simulador no pasa X-Forwarded-For: todo el navegador es la misma conexión
+      await sql(`insert into public.jump_postulaciones (nombres, whatsapp, negocio, rubro, sector, ruc, ip_hash)
+        select 'Prueba ' || i, '09800000' || lpad(i::text, 2, '0'), 'Negocio', 'Otro', 'Etapa 1', 'no', $1 from generate_series(1, 5) i`, [h]);
+      try {
+        await abrirLanding();
+        await llenarPostula({ nombre: "Jorge Mora", wa: "0991110000", negocio: "Jugos Jorge", sector: "Etapa 4" });
+        await clic("#sendBtn");
+        const aviso = await esperar(`document.querySelector("#e-form").textContent`);
+        const estado = await ev(`({ hecho: document.querySelector("#form").classList.contains("done"), boton: document.querySelector("#sendBtn").disabled, nombre: document.querySelector("#f-nombre").value })`);
+        await foto("landing-limite");
+        const n = (await fila("select count(*)::int n from public.jump_postulaciones where whatsapp = '0991110000'")).n;
+        return (aviso.includes("varias postulaciones") && !estado.hecho && !estado.boton && estado.nombre === "Jorge Mora" && n === 0) || JSON.stringify({ aviso, estado, n });
+      } finally {
+        await sql("delete from public.jump_postulaciones where ip_hash = $1 and nombres like 'Prueba %'", [h]);
+      }
+    },
+    "panel-lista": async () => {
+      await sql(`insert into public.jump_postulaciones (nombres, whatsapp, negocio, rubro, sector, ruc, estado, creado_en) values
+        ('Luis Andrade', '0981112233', 'Llaveros Luis', 'Artesanías y decoración', 'Etapa 3', 'tramite', 'nueva', now() - interval '2 days'),
+        ('Carla Vera', '0972223344', 'Uñas Carla', 'Belleza y cuidado personal', 'Etapa 1', 'si', 'contactada', now() - interval '3 days'),
+        ('Pedro Mite', '0963334455', 'Prueba', 'Otro', 'Ninguno', 'no', 'descartada', now() - interval '4 days')`);
+      await entrarEquipo();
+      const insignia = await esperar(`document.querySelector('.side a[href="#a/postulaciones"] .nav-badge')?.textContent.trim()`);
+      if (!insignia.startsWith("2")) return "insignia: " + insignia;
+      const pendiente = await esperar(`document.querySelector('.todo a[href="#a/postulaciones"]')?.closest("li").textContent`);
+      if (!pendiente.includes("2 postulaciones nuevas")) return "resumen: " + pendiente;
+      await ir("a/postulaciones");
+      // Por defecto, solo las nuevas y de la más nueva a la más vieja.
+      await esperar(`document.querySelectorAll("[data-post]").length === 2`);
+      const nombres = await ev(`[...document.querySelectorAll("[data-post] .who b")].map((b) => b.textContent.trim())`);
+      if (nombres.join("|") !== "Marta Quiñónez|Luis Andrade") return "orden: " + nombres.join("|");
+      const wa = await ev(`document.querySelector('[data-post] a[href^="https://wa.me/593995551234"]')?.target || ""`);
+      if (wa !== "_blank") return "sin enlace de WhatsApp";
+      await foto("a-postulaciones");
+      await clic('[data-act="pfiltro"][data-f="todas"]');
+      await esperar(`document.querySelectorAll("[data-post]").length === 4`);
+      await escribir("#postQ", "uñas");
+      await esperar(`document.querySelectorAll("[data-post]").length === 1`);
+      const sola = await texto("[data-post] .who b");
+      await ev(`(() => { const i = document.querySelector("#postQ"); i.value = ""; i.dispatchEvent(new Event("input", { bubbles: true })); return true; })()`);
+      await esperar(`document.querySelectorAll("[data-post]").length === 4`);
+      const pagina = await desborde();
+      // .table-panel recorta lo que se sale: se revisa que filtros y botones de cada fila quepan dentro de él.
+      const fuera = await ev(`(() => { const p = document.querySelector(".table-panel").getBoundingClientRect();
+        return [...document.querySelectorAll(".table-panel .seg button, .table-panel .row-actions .btn")].filter((b) => { const r = b.getBoundingClientRect(); return r.right > p.right + 0.5 || r.left < p.left - 0.5; }).map((b) => b.textContent.trim()); })()`);
+      return (sola === "Carla Vera" && pagina === 0 && !fuera.length) || JSON.stringify({ sola, pagina, fuera });
+    },
+    "panel-estados": async () => {
+      const luis = await fila("select id from public.jump_postulaciones where whatsapp = '0981112233'");
+      await entrarEquipo();
+      await ir("a/postulaciones");
+      await esperar(`!!document.querySelector('[data-act="pcontactada"][data-id="${luis.id}"]')`);
+      await clic(`[data-act="pcontactada"][data-id="${luis.id}"]`);
+      const aviso = await esperar(`document.querySelector("#toast.show")?.textContent.trim()`);
+      await esperar(`!document.querySelector('[data-post="${luis.id}"]')`); // sale de «Nuevas»
+      const e1 = (await fila("select estado from public.jump_postulaciones where id = $1", [luis.id])).estado;
+      // Deshacer la devuelve a nuevas.
+      await clic("#toast.show button");
+      await esperar(`!!document.querySelector('[data-post="${luis.id}"]')`);
+      const e2 = (await fila("select estado from public.jump_postulaciones where id = $1", [luis.id])).estado;
+      await clic(`[data-act="pdescartar"][data-id="${luis.id}"]`);
+      await esperar(`!document.querySelector('[data-post="${luis.id}"]')`);
+      const e3 = (await fila("select estado from public.jump_postulaciones where id = $1", [luis.id])).estado;
+      await clic('[data-act="pfiltro"][data-f="descartada"]');
+      await esperar(`!!document.querySelector('[data-act="pnueva"][data-id="${luis.id}"]')`);
+      await clic(`[data-act="pnueva"][data-id="${luis.id}"]`);
+      await esperar(`!document.querySelector('[data-post="${luis.id}"]')`);
+      const e4 = (await fila("select estado from public.jump_postulaciones where id = $1", [luis.id])).estado;
+      return (aviso.includes("contactada") && [e1, e2, e3, e4].join() === "contactada,nueva,descartada,nueva") || JSON.stringify({ aviso, e: [e1, e2, e3, e4] });
+    },
+    "panel-borrar": async () => {
+      const pedro = await fila("select id from public.jump_postulaciones where whatsapp = '0963334455'");
+      await entrarEquipo();
+      await ir("a/postulaciones");
+      await esperar(`!!document.querySelector('[data-act="pfiltro"]')`);
+      await clic('[data-act="pfiltro"][data-f="descartada"]');
+      await esperar(`!!document.querySelector('[data-act="pborrar"][data-id="${pedro.id}"]')`);
+      await clic(`[data-act="pborrar"][data-id="${pedro.id}"]`);
+      await esperar(`document.querySelector("#dlgBorrarPostu")?.open`);
+      const quien = await texto("#borrarPostuNombre");
+      await foto("a-postulaciones-borrar");
+      // Cancelar no borra nada.
+      await clic('#dlgBorrarPostu [data-act="cerrar"]');
+      if ((await fila("select count(*)::int n from public.jump_postulaciones where id = $1", [pedro.id])).n !== 1) return "se borró al cancelar";
+      await clic(`[data-act="pborrar"][data-id="${pedro.id}"]`);
+      await esperar(`document.querySelector("#dlgBorrarPostu")?.open`);
+      await clic("#borrarPostuForm [type=submit]");
+      await esperar(`!document.querySelector("#dlgBorrarPostu").open && !document.querySelector('[data-post="${pedro.id}"]')`);
+      const n = (await fila("select count(*)::int n from public.jump_postulaciones where id = $1", [pedro.id])).n;
+      return (quien === "Pedro Mite" && n === 0) || JSON.stringify({ quien, n });
+    },
+    "panel-crear-cuenta": async () => {
+      const carla = await fila("select id from public.jump_postulaciones where whatsapp = '0972223344'");
+      const ced = await cedulaNueva("092222222");
+      await entrarEquipo();
+      await ir("a/postulaciones");
+      await esperar(`!!document.querySelector('[data-act="pfiltro"]')`);
+      await clic('[data-act="pfiltro"][data-f="contactada"]');
+      await esperar(`!!document.querySelector('[data-act="pcuenta"][data-id="${carla.id}"]')`);
+      await clic(`[data-act="pcuenta"][data-id="${carla.id}"]`);
+      await esperar(`document.querySelector("#dlgAdd")?.open`);
+      const llenos = await ev(`({ n: document.querySelector("#adNombres").value, w: document.querySelector("#adWa").value, ne: document.querySelector("#adNegocio").value,
+        c: document.querySelector("#adCedula").value, foco: document.activeElement?.id })`);
+      if (llenos.n !== "Carla Vera" || llenos.w !== "0972223344" || llenos.ne !== "Uñas Carla" || llenos.c !== "" || llenos.foco !== "adCedula") return JSON.stringify(llenos);
+      await escribir("#adCedula", ced);
+      await clic("#addForm [type=submit]");
+      await esperar(`document.querySelector("#dlgClave")?.open`);
+      await clic('#dlgClave [data-act="cerrar"]');
+      const m = await fila("select nombres, negocio, whatsapp from public.jump_miembros where cedula = $1", [ced]);
+      if (!m || m.whatsapp !== "0972223344" || m.negocio !== "Uñas Carla") return "cuenta: " + JSON.stringify(m);
+      // La fila ahora dice que ya tiene cuenta y no ofrece crearla otra vez.
+      const t = await esperar(`!document.querySelector('[data-act="pcuenta"][data-id="${carla.id}"]') && document.querySelector('[data-post="${carla.id}"]')?.textContent`);
+      await foto("a-postulaciones-cuenta");
+      return t.includes("Tiene cuenta") || t;
+    },
+    "sin-migracion": async () => {
+      // Si la base todavía no tiene la tabla (no se corrió la migración 0002), el panel sigue funcionando y lo explica.
+      erroresEsperados.push([/jump_postulaciones/, /404/]);
+      await sql("drop table public.jump_postulaciones");
+      await entrarEquipo();
+      await esperar(`!!document.querySelector(".cupos")`);
+      if (await ev(`!!document.querySelector('.todo a[href="#a/postulaciones"]')`)) return "el resumen avisa postulaciones sin tabla";
+      await ir("a/postulaciones");
+      const t = await esperar(`document.querySelector("#page .empty")?.textContent`);
+      return t.includes("todavía no están activadas") || t;
+    },
+    csp: async () => {
+      const csp = consola.filter((c) => /Content Security Policy|Refused to/i.test(c));
+      return csp.length === 0 || csp.join(" | ");
+    },
+  },
 };
 
 // Preparación por grupo (una vez, antes de sus escenarios).
@@ -1149,6 +1327,11 @@ const PREPARAR = {
   admin: async () => {
     const r = await apiAdmin("ejemplos-cargar");
     if (r.status !== 201 && r.status !== 200) throw new Error("no se cargaron los ejemplos: " + JSON.stringify(r));
+  },
+  postulaciones: async () => {
+    // Los logos de Consalva Law vienen de su sitio: sin red no cargan y no es un error de la app.
+    // El límite diario de la landing responde 429 a propósito.
+    erroresEsperados.push([/consalvalaw\.com/, /./], [/\/api\/jump-postular$/, /429/]);
   },
   emprendedor: async () => {
     const r = await apiAdmin("ejemplos-cargar");

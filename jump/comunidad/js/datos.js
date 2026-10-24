@@ -265,7 +265,7 @@ const ahoraISO = () => new Date().toISOString();
 // Todo lo que ve el equipo: el contenido sin filtrar por estado, las cuentas, los conteos y la cuenta de Zoom.
 export async function cargarAdmin() {
   await iniciar();
-  const [m, men, mods, mats, cls, zm, avs, mie, bit, con, zoom] = await Promise.all([
+  const [m, men, mods, mats, cls, zm, avs, mie, bit, con, zoom, pos] = await Promise.all([
     yo(),
     q(sb.from("jump_mentorias").select("*").order("creada_en", { ascending: false })),
     q(sb.from("jump_modulos").select("*").order("orden")),
@@ -277,6 +277,8 @@ export async function cargarAdmin() {
     q(sb.from("jump_bitacora").select("*").order("creado_en", { ascending: false }).limit(12)),
     q(sb.rpc("jump_conteos")),
     adminApi("zoom-estado").catch(() => ({ configurada: false, conectada: false, error: true })),
+    // Si todavía no se corrió la migración 0002 no hay tabla: el resto del panel sigue igual.
+    q(sb.from("jump_postulaciones").select("id").eq("estado", "nueva").limit(100)).catch(() => null),
   ]);
   if (!m) throw new ErrorJump("sin_acceso");
   if (m.estado !== "activa") throw new ErrorJump("suspendida");
@@ -291,7 +293,8 @@ export async function cargarAdmin() {
   const avisos = avs.data.map(aAviso).map((a) => ({ ...a, vistos: c.avisos[a.id] || 0 }));
   const miembros = mie.data.map(miembro).map((x) => ({ ...x, hechos: c.progreso[x.userId] || 0 }));
   const bitacora = bit.data.map((b) => ({ id: b.id, actorId: b.actor_id, accion: b.accion, objetivo: b.objetivo, detalle: b.detalle, creadoEn: b.creado_en }));
-  return { yo: m, mentorias, clases, avisos, miembros, bitacora, zoom, almacenamiento: sumarMaterial(mats.data), cargadoEn: Date.now() };
+  const postulacionesNuevas = pos ? pos.data.length : null; // null: sin tabla de postulaciones
+  return { yo: m, mentorias, clases, avisos, miembros, bitacora, zoom, postulacionesNuevas, almacenamiento: sumarMaterial(mats.data), cargadoEn: Date.now() };
 }
 
 // Clase de un módulo en vivo: el título del módulo si alcanza (la clase pide de 3 a 120 caracteres).
@@ -499,6 +502,35 @@ export async function publicarAviso(texto) {
   await iniciar();
   const r = await q(sb.from("jump_avisos").insert({ tipo: "aviso", texto: texto.trim() }).select("*").single());
   return aAviso(r.data);
+}
+
+// ---------- postulaciones (formulario «Postula» de /jump/) ----------
+// Las guarda /api/jump-postular; el equipo las lee, les cambia el estado y las borra (RLS: solo admin activo).
+// La huella de la conexión (ip_hash) no se pide: el equipo no tiene permiso para leerla.
+const COLS_POSTULACION = "id,nombres,whatsapp,negocio,rubro,sector,ruc,estado,creado_en";
+export const ESTADOS_POSTULACION = ["nueva", "contactada", "descartada"];
+export const aPostulacion = (r) => ({
+  id: r.id, nombres: r.nombres, whatsapp: r.whatsapp, negocio: r.negocio, rubro: r.rubro, sector: r.sector, ruc: r.ruc,
+  estado: r.estado, creadoEn: r.creado_en,
+});
+
+export async function listarPostulaciones() {
+  await iniciar();
+  // PGRST205 (PostgREST) / 42P01 (Postgres): la tabla no existe porque falta la migración 0002.
+  const r = await q(sb.from("jump_postulaciones").select(COLS_POSTULACION).order("creado_en", { ascending: false }).limit(1000), ["PGRST205", "42P01"]);
+  if (r.error) throw new ErrorJump("sin_tabla");
+  return r.data.map(aPostulacion);
+}
+
+export async function estadoPostulacion(id, estado) {
+  if (!ESTADOS_POSTULACION.includes(estado)) throw new ErrorJump("invalido");
+  await iniciar();
+  await q(sb.from("jump_postulaciones").update({ estado }).eq("id", id));
+}
+
+export async function borrarPostulacion(id) {
+  await iniciar();
+  await q(sb.from("jump_postulaciones").delete().eq("id", id));
 }
 
 // ---------- muro ----------

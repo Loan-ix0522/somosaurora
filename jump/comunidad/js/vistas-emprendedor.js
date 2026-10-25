@@ -7,6 +7,7 @@ import { embedVideo, icsDeClase } from "./medios.js";
 import { whatsapp as normWhatsapp, texto as normTexto } from "./normalizar.js";
 import { estado, ir, refrescar } from "./app.js";
 import { errorClaveNueva } from "./vistas-ingreso.js";
+import { seccionEncuesta } from "./vistas-encuestas.js";
 
 // Lo cargado de la base. Se vuelve a pedir al entrar, al reintentar y al volver a la pestaña después de 5 min.
 let D = null;
@@ -17,13 +18,20 @@ export function limpiar() { D = null; filtro = "todas"; }
 
 async function cargar() {
   if (!D || D.yo.userId !== estado.yo?.userId) {
-    D = await datos.cargarEmprendedor();
+    // la encuesta es aparte: si falla (o falta la 0003), el Inicio sale igual, sin la tarjeta
+    const [d, encuesta] = await Promise.all([datos.cargarEmprendedor(), datos.cargarEncuesta().catch(() => null)]);
+    D = { ...d, encuesta };
     estado.yo = { ...estado.yo, ...D.yo };
     contarAvisos();
   }
   return D;
 }
 const contarAvisos = () => { estado.avisosNuevos = D.avisos.filter((a) => !a.visto).length; };
+// Al votar o proponer (en el Inicio o en el muro) la encuesta guardada queda al día.
+document.addEventListener("jump:encuesta", (e) => { if (D) D.encuesta = e.detail; });
+
+// Lo que JC necesita saber del emprendedor (null hasta que se cargue el Inicio).
+export const datosJC = () => (D ? { yo: estado.yo, clases: D.clases, avisos: D.avisos, mentorias: D.mentorias, encuesta: D.encuesta } : null);
 
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && D && Date.now() - D.cargadoEn > RECARGA_MS && location.hash.startsWith("#e/")) {
@@ -159,6 +167,7 @@ async function vInicio() {
       <section aria-labelledby="t-cont"><h2 class="sec-title" id="t-cont">${r && hechos(r) === 0 ? "Empieza por aquí" : "Sigue donde quedaste"}</h2>${seguir}</section>
       <section aria-labelledby="t-live"><h2 class="sec-title" id="t-live">Próxima clase en vivo</h2>${c ? liveCard(c) : vacio("No hay clases programadas", "Cuando el equipo programe una, la invitación te llega aquí y en Avisos.")}</section>
     </div>
+    ${seccionEncuesta(D.encuesta, "block")}
     <section class="block" aria-labelledby="t-ment"><div class="sec-head"><h2 id="t-ment">Mentorías</h2><a class="btn-link" href="#e/mentorias">Ver todas${ic("arrow")}</a></div>
       ${D.mentorias.length ? `<div class="m-grid">${D.mentorias.slice(0, 4).map(mCard).join("")}</div>` : vacio("Todavía no hay mentorías", "Cuando el equipo publique la primera, aparecerá aquí.")}</section>
     <section class="block" aria-labelledby="t-avi"><div class="sec-head"><h2 id="t-avi">Avisos de la comunidad</h2><a class="btn-link" href="#e/avisos">Ver todos${ic("arrow")}</a></div>

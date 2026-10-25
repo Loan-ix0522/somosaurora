@@ -2,6 +2,7 @@
 // Ninguna función devuelve errores crudos: todas lanzan ErrorJump { codigo, mensaje, campo? }.
 //   codigo: "credenciales" | "suspendida" | "sin_acceso" | "limite" | "red" | "sesion" | "prohibido" | "invalido" | "servidor"
 //           | "limite_publicaciones" | "limite_comentarios" | "foto_ilegible" (muro)
+//           | "idea_repetida" | "ya_propuso" | "encuesta_cerrada" (encuestas)
 import { correoEmprendedor, limpiarCedula } from "./cedula.js";
 import { aISO, fechaCorta, partes } from "./fechas.js";
 import { reducirFoto, esImagenReducible, nombreReducido, sumarMaterial } from "./medios.js";
@@ -532,6 +533,51 @@ export async function borrarPostulacion(id) {
   await iniciar();
   await q(sb.from("jump_postulaciones").delete().eq("id", id));
 }
+
+// ---------- encuestas (Encuesta del mes; migración 0003) ----------
+// El emprendedor ve la abierta (o, si no hay, la última cerrada) con el porcentaje de cada opción, nunca quién votó.
+// Vota y propone con funciones de la base (jump_votar, jump_proponer), que revisan que la encuesta siga abierta.
+const SIN_ENCUESTAS = ["PGRST205", "42P01", "PGRST202"]; // falta la 0003: no hay tablas ni funciones
+export const MSG_ENCUESTA = {
+  idea_repetida: "Esa idea ya está en la lista: vota por ella.",
+  ya_propuso: "Ya propusiste un curso en esta encuesta.",
+  encuesta_cerrada: "Esta encuesta ya se cerró.",
+};
+async function rpcEncuesta(fn, args) {
+  await iniciar();
+  let r;
+  try { r = await sb.rpc(fn, args); } catch { throw new ErrorJump("red"); }
+  const c = r.error && Object.keys(MSG_ENCUESTA).find((x) => (r.error.message || "").includes("jump_" + x));
+  if (c) throw new ErrorJump(c, MSG_ENCUESTA[c]);
+  return (await q(Promise.resolve(r))).data;
+}
+
+export async function cargarEncuesta() {
+  await iniciar();
+  const s = await sesion();
+  const campos = "id,pregunta,estado";
+  let r = await q(sb.from("jump_encuestas").select(campos).eq("estado", "abierta").limit(1), SIN_ENCUESTAS);
+  if (r.error) return null;
+  let e = r.data[0];
+  if (!e) {
+    r = await q(sb.from("jump_encuestas").select(campos).eq("estado", "cerrada").order("cerrada_en", { ascending: false, nullsFirst: false }).limit(1));
+    e = r.data[0];
+  }
+  if (!e) return null;
+  const [ops, res, voto] = await Promise.all([
+    q(sb.from("jump_encuesta_opciones").select("id,texto,propuesta_por").eq("encuesta_id", e.id).order("orden").order("creada_en")),
+    q(sb.rpc("jump_encuesta_resultados", { p_encuesta: e.id }), SIN_ENCUESTAS),
+    q(sb.from("jump_encuesta_votos").select("opcion_id").eq("encuesta_id", e.id)), // RLS: solo el voto propio
+  ]);
+  if (res.error) return null;
+  const pct = new Map(res.data.map((x) => [x.opcion_id, x.porcentaje]));
+  const yo = s?.user.id;
+  const opciones = ops.data.map((o) => ({ id: o.id, texto: o.texto, porcentaje: pct.get(o.id) ?? 0, propuestaPor: o.propuesta_por || null }));
+  return { id: e.id, pregunta: e.pregunta, estado: e.estado, opciones, miVoto: voto.data[0]?.opcion_id || null, yaPropuse: !!yo && opciones.some((o) => o.propuestaPor === yo) };
+}
+
+export const votarEncuesta = async (opcionId) => { await rpcEncuesta("jump_votar", { p_opcion: opcionId }); };
+export const proponerCurso = (encuestaId, texto) => rpcEncuesta("jump_proponer", { p_encuesta: encuestaId, p_texto: texto });
 
 // ---------- muro ----------
 

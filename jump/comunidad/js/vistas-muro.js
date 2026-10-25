@@ -5,6 +5,7 @@ import * as datos from "./datos.js";
 import { haceCuanto } from "./fechas.js";
 import { vacio } from "./piezas.js";
 import { estado } from "./app.js";
+import { seccionEncuesta } from "./vistas-encuestas.js";
 
 const MAX_TEXTO = 1000, CONTAR_DESDE = 800;
 let M = null;        // lo cargado en esta visita: { posts, hayMas, abiertos (posts con todos sus comentarios a la vista) }
@@ -88,14 +89,16 @@ const composer = () => `<form id="muroForm" class="panel composer" novalidate>
     </div></form>`;
 
 async function vMuro() {
-  M = { ...(await datos.listarPosts()), abiertos: new Set() };
+  // El emprendedor ve la Encuesta del mes fijada arriba; el equipo la maneja desde su panel.
+  const [posts, encuesta] = await Promise.all([datos.listarPosts(), esEquipo() ? null : datos.cargarEncuesta().catch(() => null)]);
+  M = { ...posts, abiertos: new Set() };
   soltarFoto();
   return {
     titulo: "Comunidad",
     html: `<div class="page-head"><div><h1>Comunidad</h1><p class="sub">${esEquipo()
       ? "Lo que comparten los emprendedores. Si algo no corresponde, ocúltalo: deja de verse para los demás y su autor ve que el equipo lo ocultó."
       : "Cuenta tus avances, haz preguntas y anima a los demás. Lo que publicas lo ve toda la Comunidad JUMP."}</p></div></div>
-      <div class="muro">${composer()}<section class="feed" id="muroLista" aria-label="Publicaciones">${listaHtml()}</section></div>`,
+      <div class="muro">${seccionEncuesta(encuesta)}${composer()}<section class="feed" id="muroLista" aria-label="Publicaciones">${listaHtml()}</section></div>`,
   };
 }
 

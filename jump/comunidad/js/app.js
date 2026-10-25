@@ -9,11 +9,12 @@ import * as editor from "./vistas-editor.js";
 import * as muro from "./vistas-muro.js";
 import * as ajustes from "./vistas-ajustes.js";
 import * as postulaciones from "./vistas-postulaciones.js";
+import * as encuestas from "./vistas-encuestas.js";
 
 export const estado = { yo: null, avisosNuevos: 0, postulacionesNuevas: 0, mensajeIngreso: "" };
 const ACT = {}, ENVIOS = {}, ENTRADAS = {}, CAMBIOS = {}, RUTAS = [];
 // Cada módulo de vistas aporta { rutas, acciones, envios, entradas, cambios, limpiar }.
-const MODULOS = [ingreso, emprendedor, admin, editor, muro, ajustes, postulaciones];
+const MODULOS = [ingreso, emprendedor, admin, editor, muro, ajustes, postulaciones, encuestas];
 const MSG_SUSPENDIDA = "Tu cuenta está suspendida. Escríbele al equipo de JUMP.";
 const MSG_SESION = "Tu sesión venció. Vuelve a entrar.";
 

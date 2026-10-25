@@ -5,6 +5,7 @@
 // Grupos: los de ESCENARIOS (abajo). Imprime un JSON { resultados: {escenario: "ok" | detalle}, consola: [...] }
 // y sale con código 1 si algo falla. Necesita Chrome y red (supabase-js viene de jsDelivr, como en producción).
 // Escritorio: 1366 px de ancho (JUMP_UI_ANCHO=1440 lo cambia); móvil: 390 px. Los puertos son fijos: una corrida a la vez.
+// JUMP_UI_SOLO=texto corre solo los escenarios del grupo cuyo nombre lo contiene.
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -197,6 +198,8 @@ async function sembrarEncuesta(estado = "abierta") {
 const votosPublicos = async (id) => (await fila("select count(*)::int n from public.jump_encuesta_votos where encuesta_id = $1 and origen = 'publico'", [id])).n;
 const barras = () => ev(`[...document.querySelectorAll("#opts .opt")].map((b) => ({ id: b.dataset.id, t: b.querySelector(".lbl").textContent.trim(),
   pct: b.querySelector(".pct").textContent.trim(), mia: b.classList.contains("mine"), off: b.disabled }))`);
+const barrasCom = () => ev(`[...document.querySelectorAll("#page [data-encuesta] .enc-opt")].map((b) => ({ id: b.dataset.id, t: b.querySelector(".enc-t").textContent.trim(),
+  pct: b.querySelector(".enc-pct").textContent.trim(), mia: b.classList.contains("mine"), off: b.disabled }))`);
 // JC: lo que dice (el globo visible), dónde está y si ya terminó de moverse.
 const globoJC = () => ev(`document.querySelector(".jc-globo.visible")?.textContent ?? null`);
 const modoJC = () => ev(`document.querySelector(".jc-escena")?.dataset.modo ?? null`);
@@ -1555,6 +1558,94 @@ const ESCENARIOS = {
       const e3 = await ev(`({ esc: document.querySelector(".jc-escena").classList.contains("escondido"), volver: !document.querySelector(".jc-volver").hidden, mem: localStorage.getItem("jc.escondido") })`);
       return (!e3.esc && !e3.volver && e3.mem === "false") || "al traerlo: " + JSON.stringify(e3);
     },
+    // ---------- comunidad: Encuesta del mes ----------
+    "comunidad-encuesta-inicio": async () => {
+      // María (E) ya votó por la primera opción en la siembra: la ve marcada y puede cambiarla.
+      const e = await sembrarEncuesta();
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector("#page [data-encuesta]")`);
+      const t = await ev(`(() => { const c = document.querySelector("#page [data-encuesta]");
+        return { id: c.dataset.encuesta, q: c.querySelector(".enc-q").textContent.trim(), nota: c.querySelector(".enc-nota").textContent.trim(),
+          form: !!c.querySelector("#proponerForm") }; })()`);
+      const b = await barrasCom();
+      if (t.id !== e.id || t.q !== "¿Qué taller quieres para diciembre?" || !t.form) return JSON.stringify(t);
+      if (JSON.stringify(b.map((x) => [x.t, x.pct, x.mia])) !== JSON.stringify([["Fotos de producto con el celular", "75 %", true], ["Cómo sacar el RUC sin enredos", "25 %", false], ["Vender por WhatsApp Business", "0 %", false]])) return "barras: " + JSON.stringify(b);
+      if (t.nota !== "Ya votaste · puedes cambiar tu voto") return "nota: " + t.nota;
+      await foto("e-inicio-encuesta");
+      // Sin encuesta (o sin la 0003) el Inicio no muestra la tarjeta ni falla.
+      await sql("delete from public.jump_encuestas");
+      await abrir("e/inicio", { limpiar: false });
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector(".page-head h1")`);
+      return !(await ev(`!!document.querySelector("#page [data-encuesta]")`)) || "tarjeta sin encuesta";
+    },
+    "comunidad-votar-cambiar": async () => {
+      const e = await sembrarEncuesta();
+      await entrar(X.E2);
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector("#page [data-encuesta]")`);
+      if ((await texto("#page .enc-nota")) !== "Toca una opción para votar") return "nota: " + (await texto("#page .enc-nota"));
+      await clic(`#page [data-act="votar-encuesta"][data-id="${e.o[1]}"]`);
+      await esperar(`document.querySelector("#page .enc-opt.mine")?.dataset.id === ${JSON.stringify(e.o[1])}`);
+      let b = await barrasCom();
+      if (JSON.stringify(b.map((x) => x.pct)) !== JSON.stringify(["60 %", "40 %", "0 %"])) return "después de votar: " + JSON.stringify(b);
+      if ((await texto("#page .enc-nota")) !== "Ya votaste · puedes cambiar tu voto") return "nota después: " + (await texto("#page .enc-nota"));
+      await clic(`#page [data-act="votar-encuesta"][data-id="${e.o[2]}"]`);
+      await esperar(`document.querySelector("#page .enc-opt.mine")?.dataset.id === ${JSON.stringify(e.o[2])}`);
+      b = await barrasCom();
+      const filas = (await sql("select opcion_id, origen from public.jump_encuesta_votos where encuesta_id = $1 and user_id = $2", [e.id, X.E2.id])).rows;
+      return (JSON.stringify(b.map((x) => x.pct)) === JSON.stringify(["60 %", "20 %", "20 %"]) && filas.length === 1 && filas[0].opcion_id === e.o[2] && filas[0].origen === "inscrito")
+        || JSON.stringify({ b, filas });
+    },
+    "comunidad-proponer-una-vez": async () => {
+      const e = await sembrarEncuesta();
+      await entrar(X.E2);
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector("#proponerForm")`);
+      await clic("#proponerForm [type=submit]");
+      const vacio = await esperar(`document.querySelector("#propIdeaErr:not([hidden])")?.textContent`);
+      if (!vacio.includes("curso")) return "error vacío: " + vacio;
+      await escribir("#propIdea", "  Cómo vender   por TikTok ");
+      await clic("#proponerForm [type=submit]");
+      await esperar(`[...document.querySelectorAll("#page .enc-opt")].some((b) => b.textContent.includes("Cómo vender por TikTok"))`);
+      const t = await ev(`(() => { const o = [...document.querySelectorAll("#page .enc-opt")].find((b) => b.textContent.includes("Cómo vender por TikTok"));
+        return { mia: o.classList.contains("mine"), tuya: !!o.querySelector(".tag"), form: !!document.querySelector("#proponerForm"), nota: document.querySelector("#page .enc-ya")?.textContent.trim() }; })()`);
+      const f = await fila("select o.texto, o.propuesta_por, v.opcion_id = o.id as votada from public.jump_encuesta_opciones o join public.jump_encuesta_votos v on v.encuesta_id = o.encuesta_id and v.user_id = $2 where o.encuesta_id = $1 and o.propuesta_por = $2", [e.id, X.E2.id]);
+      await foto("e-encuesta-propuesta");
+      return (t.mia && t.tuya && !t.form && t.nota === "Ya propusiste un curso en esta encuesta." && f?.texto === "Cómo vender por TikTok" && f.votada)
+        || JSON.stringify({ t, f });
+    },
+    "comunidad-idea-repetida": async () => {
+      const e = await sembrarEncuesta();
+      await entrar(X.E2);
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector("#proponerForm")`);
+      // Ya está en la lista (con otras mayúsculas y espacios): se avisa sin ir a la base.
+      await escribir("#propIdea", " cómo SACAR el ruc   sin enredos ");
+      await clic("#proponerForm [type=submit]");
+      const m1 = await esperar(`document.querySelector("#propIdeaErr:not([hidden])")?.textContent`);
+      if (m1 !== "Esa idea ya está en la lista: vota por ella.") return "repetida en pantalla: " + m1;
+      // Otro la propuso después de abrir la página: la base la rechaza y se dice lo mismo.
+      await sql("insert into public.jump_encuesta_opciones (encuesta_id, texto, orden) values ($1, 'Cursos de TikTok', 9)", [e.id]);
+      erroresEsperados.push([/\/rpc\/jump_proponer$/, /status of 409/]); // el rechazo de la base es a propósito
+      await escribir("#propIdea", "Cursos de TikTok");
+      await clic("#proponerForm [type=submit]");
+      await esperar(`document.querySelector("#propIdeaErr:not([hidden])")?.textContent === "Esa idea ya está en la lista: vota por ella." && document.querySelector("#propIdea").value === "Cursos de TikTok"`);
+      const n = (await fila("select count(*)::int n from public.jump_encuesta_opciones where encuesta_id = $1", [e.id])).n;
+      return n === 4 || "opciones: " + n;
+    },
+    "comunidad-muro-fijada": async () => {
+      const e = await sembrarEncuesta();
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio"`);
+      await ir("e/muro");
+      await esperar(`location.hash === "#e/muro" && !!document.querySelector("#muroForm") && !!document.querySelector("#page [data-encuesta]")`);
+      const orden = await ev(`(() => { const c = document.querySelector("#page [data-encuesta]"), f = document.querySelector("#muroForm");
+        return { antes: !!(c.compareDocumentPosition(f) & Node.DOCUMENT_POSITION_FOLLOWING), id: c.dataset.encuesta }; })()`);
+      if (!orden.antes || orden.id !== e.id) return "en el muro: " + JSON.stringify(orden);
+      await foto("e-muro-encuesta");
+      // El equipo no la ve en su muro (la maneja desde su panel).
+      await entrarEquipo();
+      await ir("a/muro");
+      await esperar(`location.hash === "#a/muro" && !!document.querySelector("#muroLista")`);
+      return !(await ev(`!!document.querySelector("#page [data-encuesta]")`)) || "el equipo ve la tarjeta en su muro";
+    },
     desborde: async () => {
       // Ni JC ni su globo ensanchan la página.
       await landing();
@@ -1597,7 +1688,8 @@ const resultados = {};
 const lista = ESCENARIOS[grupo];
 if (lista && PREPARAR[grupo]) await PREPARAR[grupo]();
 if (!lista) { console.error(`Grupo desconocido: ${grupo}. Hay: ${Object.keys(ESCENARIOS).join(", ")}`); process.exitCode = 2; }
-for (const [nombre, fn] of Object.entries(lista || {})) {
+const solo = process.env.JUMP_UI_SOLO;
+for (const [nombre, fn] of Object.entries(lista || {}).filter(([n]) => !solo || n.includes(solo))) {
   try {
     const r = await Promise.race([fn(), dormir(30000).then(() => "tiempo agotado")]);
     resultados[nombre] = r === true ? "ok" : String(r);

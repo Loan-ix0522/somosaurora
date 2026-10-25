@@ -1,0 +1,158 @@
+/* JC, la mascota de JUMP: un solo personaje para la landing y la comunidad (lo arma jc.js).
+   Las capas, las posiciones de cada dibujo y los movimientos vienen de la demo aprobada (mockups/jump/jc-2d). */
+.jc-escena {
+  --jc-tinta: #0B1640; --jc-navy: #0B1F5C; --jc-sol: #FFC21A; --jc-sol-50: #FFF6DA;
+  --jc-ease-out: cubic-bezier(.23, 1, .32, 1); --jc-ease-in-out: cubic-bezier(.77, 0, .175, 1);
+  position: absolute; top: 0; left: 0; width: 100%; height: 0; z-index: 40; pointer-events: none;
+}
+.jc-escena.fuera { display: none; }
+
+/* Dónde está: en la esquina (fija abajo a la derecha) o grande sobre su ancla (jc.js pone left/top). */
+.jc { --alto-jc: 120px; position: fixed; right: 16px; bottom: 16px; width: calc(var(--alto-jc) * .477);
+  transform-origin: 0 100%; transition: opacity .2s var(--jc-ease-out), visibility 0s linear 0s; }
+.jc-escena[data-modo="grande"] .jc { --alto-jc: clamp(200px, 36vh, 300px); position: absolute; right: auto; bottom: auto; }
+body.jc-sobre-barra .jc-escena[data-modo="esquina"] .jc { bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
+@media (max-width: 560px) {
+  .jc { --alto-jc: 84px; right: 12px; bottom: 12px; }
+  .jc-escena[data-modo="grande"] .jc { --alto-jc: 150px; }
+}
+/* Escondido, tapando un campo con el teclado abierto, o recién llegado: no se ve ni se toca. */
+.jc-escena.escondido .jc, .jc-escena.tapa .jc, .jc-escena.entrando .jc {
+  opacity: 0; visibility: hidden; transition: opacity .15s var(--jc-ease-out), visibility 0s linear .15s; }
+
+/* Cada capa lleva una sola transformación para que no se pisen entre sí:
+   .jc (dónde está) > .jc-paseo (caminar) > .jc-giro (hacia dónde mira) > .jc-salto > .jc-cambio (boing) > .jc-animo > .jc-cuerpo */
+.jc-paseo { position: relative; }
+.jc-giro { transition: transform .18s var(--jc-ease-out); transform-origin: 50% 100%; }
+.jc.izquierda .jc-giro { transform: scaleX(-1); }
+.jc-salto, .jc-cambio, .jc-animo { transform-origin: 50% 100%; }
+.jc-cuerpo { position: relative; transform-origin: 50% 100%; }
+/* Un dibujo por ánimo, todos con el mismo encuadre y ubicados sobre el de «reposo»; solo se ve el activo. */
+.jc .cara { position: absolute; display: block; max-width: none; height: auto; visibility: hidden; user-select: none; -webkit-user-drag: none; pointer-events: none; }
+.jc .cara[data-cara="reposo"] { position: relative; width: 100%; }
+.jc .cara.activa { visibility: visible; }
+/* Encuadre de cada dibujo respecto al de reposo (los genera exportar.py). */
+.jc .cara[data-cara="feliz"] { left: -20.33%; top: -0.20%; width: 121.97%; }
+.jc .cara[data-cara="triste"] { left: 1.85%; top: 0.00%; width: 99.18%; }
+.jc .cara[data-cara="enojado"] { left: 0.00%; top: -0.10%; width: 100.21%; }
+.jc .cara[data-cara="bromista"] { left: 1.64%; top: -0.10%; width: 102.05%; }
+.jc .cara[data-cara="salto"] { left: -27.31%; top: -2.05%; width: 155.65%; }
+.jc-sombra { position: absolute; left: 12%; right: 12%; bottom: -10px; height: 18px; border-radius: 50%; background: rgba(11, 22, 64, .18); filter: blur(3px); transform-origin: 50% 50%; }
+
+/* Párpados: tapan el ojo de arriba abajo, con una línea de pestañas al cerrar. */
+.parpado { position: absolute; border-radius: 48% 48% 50% 50%;
+  background: linear-gradient(#e89c72, #fbb991 70%, #fdbf98); border-bottom: 2px solid #3a2216;
+  transform: scaleY(0); transform-origin: 50% 0; opacity: 0; }
+/* Cada cara tiene los ojos en otro lugar (los genera exportar.py). */
+.jc-cuerpo[data-cara="reposo"] .parpado.i { left: 23.20%; top: 20.25%; width: 18.07%; height: 8.22%; }
+.jc-cuerpo[data-cara="reposo"] .parpado.d { left: 58.52%; top: 20.06%; width: 18.07%; height: 8.32%; }
+.jc-cuerpo[data-cara="feliz"] .parpado.i { left: 24.64%; top: 19.37%; width: 18.28%; height: 8.12%; }
+.jc-cuerpo[data-cara="feliz"] .parpado.d { left: 59.96%; top: 18.10%; width: 18.28%; height: 8.90%; }
+.jc-cuerpo[data-cara="triste"] .parpado.i { left: 25.05%; top: 25.44%; width: 18.28%; height: 7.53%; }
+.jc-cuerpo[data-cara="triste"] .parpado.d { left: 59.55%; top: 24.17%; width: 18.69%; height: 8.02%; }
+.jc-cuerpo[data-cara="enojado"] .parpado.i { left: 24.23%; top: 22.60%; width: 18.69%; height: 5.87%; }
+.jc-cuerpo[data-cara="enojado"] .parpado.d { left: 58.11%; top: 22.60%; width: 18.69%; height: 5.87%; }
+.jc-cuerpo[data-cara="bromista"] .parpado.d { left: 60.16%; top: 17.91%; width: 18.69%; height: 8.41%; }
+/* «bromista» ya guiña el izquierdo y en «salto» tiene los dos cerrados. */
+.jc-cuerpo[data-cara="bromista"] .parpado.i, .jc-cuerpo[data-cara="salto"] .parpado { display: none; }
+.jc.parpadea .parpado { animation: jc-parpadeo .24s linear; }
+@keyframes jc-parpadeo {
+  0% { transform: scaleY(0); opacity: 1; }
+  35%, 55% { transform: scaleY(1); opacity: 1; }
+  100% { transform: scaleY(0); opacity: 1; }
+}
+
+/* Ánimos en reposo (animaciones CSS: corren fuera del hilo principal). */
+.jc-escena[data-animo="reposo"] .jc-cuerpo { animation: jc-respira 3.2s var(--jc-ease-in-out) infinite; }
+
+.jc-escena[data-animo="feliz"] .jc-animo { animation: jc-feliz 2.6s var(--jc-ease-in-out) infinite; }
+.jc-escena[data-animo="feliz"] .jc-cuerpo { animation: jc-respira 2.6s var(--jc-ease-in-out) infinite; }
+@keyframes jc-feliz { 0%, 100% { transform: rotate(-2deg); } 50% { transform: rotate(2deg); } }
+@keyframes jc-respira { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(1.012, .985); } }
+
+.jc-escena[data-animo="triste"] .jc-animo { animation: jc-triste 4.2s var(--jc-ease-in-out) infinite; }
+.jc-escena[data-animo="triste"] .jc-cuerpo { animation: jc-respira-lento 4.2s var(--jc-ease-in-out) infinite; filter: saturate(.88); }
+@keyframes jc-triste { 0%, 100% { transform: rotate(-3deg) translateY(1.5%); } 50% { transform: rotate(-4.5deg) translateY(2.5%); } }
+@keyframes jc-respira-lento { 0%, 100% { transform: scale(1, .975); } 50% { transform: scale(1.01, .955); } }
+
+.jc-escena[data-animo="enojado"] .jc-animo { animation: jc-enojado 2.2s linear infinite; }
+.jc-escena[data-animo="enojado"] .jc-cuerpo { animation: jc-resopla 2.2s var(--jc-ease-in-out) infinite; }
+@keyframes jc-enojado {
+  0%, 62%, 100% { transform: translateX(0) rotate(0); }
+  66% { transform: translateX(-2.5%) rotate(-1.5deg); } 70% { transform: translateX(2.5%) rotate(1.5deg); }
+  74% { transform: translateX(-2%) rotate(-1deg); } 78% { transform: translateX(2%) rotate(1deg); } 82% { transform: translateX(0) rotate(0); }
+}
+@keyframes jc-resopla { 0%, 100% { transform: scale(1, 1); } 30% { transform: scale(1.03, .97); } 60% { transform: scale(1, 1); } }
+
+.jc-escena[data-animo="bromista"] .jc-animo { animation: jc-bromista 1.3s var(--jc-ease-in-out) infinite; }
+.jc-escena[data-animo="bromista"] .jc-cuerpo { animation: jc-rebota .65s var(--jc-ease-in-out) infinite; }
+@keyframes jc-bromista { 0%, 100% { transform: rotate(-6deg); } 50% { transform: rotate(6deg); } }
+@keyframes jc-rebota { 0%, 100% { transform: translateY(0) scale(1, 1); } 50% { transform: translateY(-3%) scale(.98, 1.03); } }
+
+/* Caminar: tira de 14 cuadros (373×703 cada uno); la cabeza y el piso calzan con los del dibujo de reposo.
+   Mira a la derecha; hacia la izquierda la voltea .jc-giro. La tira se carga después, cuando la página está lista. */
+.jc-cuerpo .paso { position: absolute; left: -7.85%; top: -3.23%; width: 114.77%; aspect-ratio: 373 / 703; overflow: hidden; visibility: hidden; }
+.jc-cuerpo .paso img { display: block; width: 1400%; height: 100%; max-width: none; pointer-events: none; }
+.jc.caminando .paso { visibility: visible; }
+.jc.caminando .paso img { animation: jc-andar 1.1667s steps(14) infinite; }
+@keyframes jc-andar { to { transform: translateX(-100%); } }
+.jc.caminando .cara { visibility: hidden; }
+.jc.caminando .parpado { display: none; }
+/* El balanceo de cada ánimo se apaga al caminar: el bamboleo de verdad ya viene en los cuadros. */
+.jc.caminando .jc-animo, .jc.caminando .jc-cuerpo { animation: none; }
+
+/* Marca de enojo estilo manga junto a la cabeza. */
+.jc-enojo { position: absolute; top: 2%; right: -6%; width: 22%; opacity: 0; transform: scale(.9); transition: opacity .2s var(--jc-ease-out), transform .2s var(--jc-ease-out); }
+.jc-escena[data-animo="enojado"] .jc-enojo { opacity: 1; transform: scale(1); animation: jc-late 1.1s var(--jc-ease-in-out) infinite; }
+@keyframes jc-late { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.12); } }
+
+/* El cuerpo es un botón: tocarlo lo hace saltar. */
+.jc-toque { position: absolute; inset: 0; width: 100%; margin: 0; padding: 0; background: none; border: 0; border-radius: 40% 40% 20% 20%;
+  cursor: pointer; pointer-events: auto; -webkit-tap-highlight-color: transparent; }
+.jc-toque:focus-visible { outline: 3px solid var(--jc-navy); outline-offset: 6px; }
+
+/* Botón para esconderlo. Con mouse aparece al pasar por encima; en pantallas táctiles queda a la vista en la esquina. */
+.jc-esconder { position: absolute; top: -6px; right: -12px; z-index: 2; width: 28px; height: 28px; margin: 0; padding: 0;
+  display: grid; place-items: center; border-radius: 50%; border: 1.5px solid var(--jc-tinta); background: #fff; color: var(--jc-tinta);
+  cursor: pointer; pointer-events: auto; opacity: 0; transform: scale(.9);
+  transition: opacity .15s var(--jc-ease-out), transform .15s var(--jc-ease-out); }
+.jc-esconder svg { width: 12px; height: 12px; }
+.jc:hover .jc-esconder, .jc:focus-within .jc-esconder, .jc-escena.hablando .jc-esconder { opacity: 1; transform: scale(1); }
+.jc-esconder:focus-visible { outline: 3px solid var(--jc-navy); outline-offset: 2px; }
+@media (hover: none) { .jc-escena[data-modo="esquina"] .jc-esconder { opacity: .9; transform: scale(1); } }
+@media (max-width: 560px) { .jc-esconder { right: -4px; top: -10px; } }
+
+/* Globo: junto a la cabeza, sin salirse de la pantalla; la cola siempre apunta a JC (jc.js calcula --x y --cola). */
+.jc-globo { position: absolute; bottom: calc(100% - 4%); left: var(--x, 62%); z-index: 3; width: max-content; max-width: min(300px, calc(100vw - 24px));
+  margin: 0; background: #fff; color: var(--jc-tinta); border: 2px solid var(--jc-tinta); border-radius: 22px; padding: 12px 16px;
+  font: 600 15px/1.35 var(--display, system-ui, sans-serif); text-align: left; letter-spacing: 0; text-transform: none;
+  box-shadow: 0 10px 0 -4px rgba(11, 22, 64, .12);
+  transform-origin: var(--cola, 28px) 100%; opacity: 0; transform: scale(.94) translateY(6px); pointer-events: none;
+  transition: opacity .15s var(--jc-ease-out), transform .15s var(--jc-ease-out); }
+.jc-globo.visible { opacity: 1; transform: scale(1) translateY(0); pointer-events: auto; transition-duration: .22s; }
+.jc-globo::after { content: ""; position: absolute; left: calc(var(--cola, 28px) - 10px); bottom: -13px; width: 20px; height: 20px; background: #fff;
+  border-right: 2px solid var(--jc-tinta); border-bottom: 2px solid var(--jc-tinta); transform: skewX(28deg) rotate(45deg); border-bottom-right-radius: 4px; }
+.jc-globo.hacia-derecha::after { transform: skewX(-28deg) rotate(45deg); }
+@media (max-width: 560px) { .jc-globo { font-size: 14px; padding: 10px 14px; border-radius: 18px; } }
+
+/* Chispas del salto */
+.jc-chispa { position: absolute; width: 18px; height: 18px; left: 50%; top: 30%; margin: -9px 0 0 -9px; pointer-events: none; }
+
+/* Burbuja con su cara: queda en lugar de JC cuando lo esconden, y lo trae de vuelta. */
+.jc-volver { position: fixed; right: 16px; bottom: 16px; width: 52px; height: 52px; margin: 0; padding: 0; overflow: hidden;
+  border-radius: 50%; border: 2px solid var(--jc-tinta); background: var(--jc-sol-50); cursor: pointer; pointer-events: auto;
+  box-shadow: 0 10px 22px -12px rgba(11, 22, 64, .55); transition: transform .15s var(--jc-ease-out); }
+.jc-volver[hidden] { display: none; }
+.jc-volver img { display: block; width: 125%; max-width: none; height: auto; margin: 3px 0 0 -12.5%; pointer-events: none; }
+.jc-volver:active { transform: scale(.96); }
+.jc-volver:focus-visible { outline: 3px solid var(--jc-navy); outline-offset: 3px; }
+@media (hover: hover) and (pointer: fine) { .jc-volver:hover { transform: scale(1.05); } }
+body.jc-sobre-barra .jc-volver { bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
+@media (max-width: 560px) { .jc-volver { right: 12px; bottom: 12px; width: 46px; height: 46px; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .jc-escena .jc-animo, .jc-escena .jc-cuerpo, .jc.caminando .jc-animo, .jc.caminando .jc-cuerpo,
+  .jc-escena[data-animo="enojado"] .jc-enojo { animation: none !important; }
+  .jc-globo { transform: none !important; }
+  .jc-giro { transition: none; }
+}

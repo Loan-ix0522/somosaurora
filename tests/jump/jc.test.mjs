@@ -180,3 +180,35 @@ test("regreso tras 7 días", () => {
   assert.notEqual(elegir({ lugar: "comunidad", seccion: "inicio", anuncios: [], memoria: m, alLlegar: true }).clave, "regreso");
   assert.equal(new Memoria(m.almacen, () => AHORA + H).diasDesdeUltimaVisita(), 0, "la visita quedó guardada");
 });
+
+// ---------- recursos del personaje (Task 3) ----------
+import { readFileSync, statSync, existsSync } from "node:fs";
+const JC = new URL("../../jump/jc/", import.meta.url);
+const DIBUJOS = ["reposo", "feliz", "triste", "enojado", "bromista", "salto"];
+
+test("los dibujos de JC están en jump/jc y pesan lo esperado", () => {
+  for (const d of DIBUJOS) {
+    const f = new URL(`jc-${d}.webp`, JC);
+    assert.ok(existsSync(f), `falta jc-${d}.webp`);
+    assert.ok(statSync(f).size < 80 * 1024, `jc-${d}.webp pesa ${statSync(f).size}`);
+  }
+  const tira = new URL("jc-caminar.webp", JC);
+  assert.ok(existsSync(tira), "falta jc-caminar.webp");
+  assert.ok(statSync(tira).size < 600 * 1024, `jc-caminar.webp pesa ${statSync(tira).size}`);
+});
+
+test("jc.css usa las posiciones de la demo", () => {
+  const css = readFileSync(new URL("jc.css", JC), "utf8").replace(/\s+/g, " ");
+  assert.ok(css.includes("steps(14)"), "la caminata va en 14 cuadros");
+  const PARPADOS = [
+    ['reposo', 'i', '23.20%', '20.25%', '18.07%', '8.22%'], ['reposo', 'd', '58.52%', '20.06%', '18.07%', '8.32%'],
+    ['feliz', 'i', '24.64%', '19.37%', '18.28%', '8.12%'], ['feliz', 'd', '59.96%', '18.10%', '18.28%', '8.90%'],
+    ['triste', 'i', '25.05%', '25.44%', '18.28%', '7.53%'], ['triste', 'd', '59.55%', '24.17%', '18.69%', '8.02%'],
+    ['enojado', 'i', '24.23%', '22.60%', '18.69%', '5.87%'], ['enojado', 'd', '58.11%', '22.60%', '18.69%', '5.87%'],
+    ['bromista', 'd', '60.16%', '17.91%', '18.69%', '8.41%'],
+  ];
+  for (const [cara, lado, left, top, width, height] of PARPADOS)
+    assert.ok(css.includes(`.jc-cuerpo[data-cara="${cara}"] .parpado.${lado} { left: ${left}; top: ${top}; width: ${width}; height: ${height}; }`), `${cara} ${lado}`);
+  for (const a of ["reposo", "feliz", "triste", "enojado", "bromista"]) assert.ok(css.includes(`.jc-escena[data-animo="${a}"]`), a);
+  assert.ok(css.includes("prefers-reduced-motion"), "respeta reduced motion");
+});

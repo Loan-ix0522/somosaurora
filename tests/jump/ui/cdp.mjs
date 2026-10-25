@@ -174,6 +174,47 @@ async function abrirLanding() {
   await send("Page.navigate", { url: sim.url + "/jump/#postula" });
   await esperar(`document.readyState === "complete" && !!document.querySelector("#sendBtn")`); // el módulo ya corrió (va diferido)
 }
+// La landing completa, limpia o conservando lo que guardó el navegador (el voto del aparato, lo que ya dijo JC).
+// Espera a que la encuesta termine de cargar (#poll[data-estado] deja de ser «cargando»).
+async function landing(hash = "", { limpiar = true } = {}) {
+  if (limpiar) await send("Storage.clearDataForOrigin", { origin: sim.url, storageTypes: "local_storage,session_storage,cookies" });
+  await send("Page.navigate", { url: "about:blank" });
+  await send("Page.navigate", { url: sim.url + "/jump/" + (hash ? "#" + hash : "") });
+  await esperar(`document.readyState === "complete" && !!document.querySelector("#poll")?.dataset.estado && document.querySelector("#poll").dataset.estado !== "cargando"`);
+}
+// Una encuesta real con tres opciones y cuatro votos (tres públicos y uno de inscrito): 3 / 1 / 0 → 75 %, 25 %, 0 %.
+async function sembrarEncuesta(estado = "abierta") {
+  await sql("delete from public.jump_encuestas");
+  const { id } = await fila("insert into public.jump_encuestas (pregunta, estado) values ('¿Qué taller quieres para diciembre?', $1) returning id", [estado]);
+  const o = [];
+  for (const [i, t] of ["Fotos de producto con el celular", "Cómo sacar el RUC sin enredos", "Vender por WhatsApp Business"].entries())
+    o.push((await fila("insert into public.jump_encuesta_opciones (encuesta_id, texto, orden) values ($1, $2, $3) returning id", [id, t, i + 1])).id);
+  await sql(`insert into public.jump_encuesta_votos (encuesta_id, opcion_id, origen, dispositivo_hash, ip_hash) values
+    ($1, $2, 'publico', 'semilla-1', 'ip-semilla'), ($1, $2, 'publico', 'semilla-2', 'ip-semilla'), ($1, $3, 'publico', 'semilla-3', 'ip-semilla')`, [id, o[0], o[1]]);
+  await sql("insert into public.jump_encuesta_votos (encuesta_id, opcion_id, origen, user_id) values ($1, $2, 'inscrito', $3)", [id, o[0], X.E.id]);
+  return { id, o };
+}
+const votosPublicos = async (id) => (await fila("select count(*)::int n from public.jump_encuesta_votos where encuesta_id = $1 and origen = 'publico'", [id])).n;
+const barras = () => ev(`[...document.querySelectorAll("#opts .opt")].map((b) => ({ id: b.dataset.id, t: b.querySelector(".lbl").textContent.trim(),
+  pct: b.querySelector(".pct").textContent.trim(), mia: b.classList.contains("mine"), off: b.disabled }))`);
+// JC: lo que dice (el globo visible), dónde está y si ya terminó de moverse.
+const globoJC = () => ev(`document.querySelector(".jc-globo.visible")?.textContent ?? null`);
+const modoJC = () => ev(`document.querySelector(".jc-escena")?.dataset.modo ?? null`);
+const jcQuieto = `!!document.querySelector(".jc") && !document.querySelector(".jc").getAnimations().length`;
+// ¿JC (o su globo) tapa los botones de la portada o la cara de Josué? La cara: el tercio de arriba de la foto, al centro.
+const tapaPortada = () => ev(`(() => {
+  const cruza = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+  const img = document.querySelector(".ha-cut img").getBoundingClientRect();
+  const cara = { left: img.left + img.width * .35, right: img.left + img.width * .72, top: img.top, bottom: img.top + img.height * .34 };
+  const jc = document.querySelector(".jc").getBoundingClientRect(), g = document.querySelector(".jc-globo.visible")?.getBoundingClientRect();
+  const botones = [...document.querySelectorAll(".hero-copy .ctas a, #logoBtn")].map((e) => e.getBoundingClientRect());
+  const r = [];
+  if (botones.some((b) => cruza(jc, b))) r.push("JC tapa un botón");
+  if (cruza(jc, cara)) r.push("JC tapa la cara de Josué");
+  if (g && cruza(g, cara)) r.push("el globo tapa la cara de Josué");
+  if (g && botones.some((b) => cruza(g, b))) r.push("el globo tapa un botón");
+  return r.join("; ");
+})()`);
 async function llenarPostula({ nombre, wa, negocio, sector, rubro = "Comida y bebidas", ruc = "no" }) {
   await escribir("#f-nombre", nombre);
   await escribir("#f-wa", wa);
@@ -1320,6 +1361,213 @@ const ESCENARIOS = {
       return csp.length === 0 || csp.join(" | ");
     },
   },
+  jc: {
+    // ---------- landing: encuesta real ----------
+    "landing-encuesta-real": async () => {
+      const e = await sembrarEncuesta();
+      await landing("encuestas");
+      const estado = await ev(`document.querySelector("#poll").dataset.estado`);
+      const q = await texto("#pollQ");
+      if (estado !== "abierta" || q !== "¿Qué taller quieres para diciembre?") return JSON.stringify({ estado, q });
+      const b = await barras();
+      const esperado = [["Fotos de producto con el celular", "75 %"], ["Cómo sacar el RUC sin enredos", "25 %"], ["Vender por WhatsApp Business", "0 %"]];
+      if (JSON.stringify(b.map((x) => [x.t, x.pct])) !== JSON.stringify(esperado) || b.some((x) => x.mia || x.off) || b[0].id !== e.o[0]) return "barras: " + JSON.stringify(b);
+      const votos = await texto("#votes");
+      if (votos !== "Toca una opción para votar") return "votos: " + votos;
+      // Las barras suben hasta su porcentaje al verse la tarjeta (en el celular queda debajo del texto de la sección).
+      await ev(`document.querySelector("#poll").scrollIntoView({ block: "center", behavior: "instant" }), true`);
+      await esperar(`document.querySelector("#opts .opt .fill").getBoundingClientRect().width > document.querySelector("#opts .opt").getBoundingClientRect().width * .7`);
+      await foto("landing-encuesta");
+      return true;
+    },
+    "landing-voto-cambia": async () => {
+      const e = await sembrarEncuesta();
+      await landing("encuestas");
+      await clic(`#opts .opt[data-id="${e.o[1]}"]`);
+      await esperar(`document.querySelector("#opts .opt.mine")?.dataset.id === ${JSON.stringify(e.o[1])}`);
+      let b = await barras();
+      if (JSON.stringify(b.map((x) => x.pct)) !== JSON.stringify(["60 %", "40 %", "0 %"])) return "después de votar: " + JSON.stringify(b);
+      if ((await texto("#votes")) !== "Ya votaste · puedes cambiar tu voto") return "votos: " + (await texto("#votes"));
+      if ((await votosPublicos(e.id)) !== 4) return "votos públicos: " + (await votosPublicos(e.id));
+      const guardado = await ev(`({ voto: localStorage.getItem("jump.voto.${e.id}"), aparato: localStorage.getItem("jump.dispositivo") })`);
+      if (guardado.voto !== e.o[1] || !/^[A-Za-z0-9_-]{16,64}$/.test(guardado.aparato || "")) return "guardado: " + JSON.stringify(guardado);
+      await foto("landing-voto");
+      // Al volver, la página recuerda el voto y lo muestra contado (sin caché vieja); cambiarlo no suma otro.
+      await landing("encuestas", { limpiar: false });
+      if ((await ev(`document.querySelector("#opts .opt.mine")?.dataset.id`)) !== e.o[1]) return "no recordó el voto";
+      if (JSON.stringify((await barras()).map((x) => x.pct)) !== JSON.stringify(["60 %", "40 %", "0 %"])) return "al recargar: " + JSON.stringify(await barras());
+      await clic(`#opts .opt[data-id="${e.o[2]}"]`);
+      await esperar(`document.querySelector("#opts .opt.mine")?.dataset.id === ${JSON.stringify(e.o[2])}`);
+      b = await barras();
+      const n = await votosPublicos(e.id);
+      const mio = await fila("select opcion_id from public.jump_encuesta_votos where encuesta_id = $1 and origen = 'publico' and dispositivo_hash not like 'semilla-%'", [e.id]);
+      return (JSON.stringify(b.map((x) => x.pct)) === JSON.stringify(["60 %", "20 %", "20 %"]) && n === 4 && mio.opcion_id === e.o[2]) || JSON.stringify({ b, n, mio });
+    },
+    "landing-voto-tope": async () => {
+      // Treinta aparatos ya votaron desde esta conexión: el siguiente se frena con un aviso y nada se marca como suyo.
+      const { huellaIp } = await import("../../../api/_jump/secretos.js");
+      const h = await huellaIp(""); // el simulador no pasa X-Forwarded-For: todo el navegador es la misma conexión
+      const e = await sembrarEncuesta();
+      await sql("insert into public.jump_encuesta_votos (encuesta_id, opcion_id, origen, dispositivo_hash, ip_hash) select $1, $2, 'publico', 'tope-' || i, $3 from generate_series(1, 30) i", [e.id, e.o[2], h]);
+      await landing("encuestas");
+      await clic(`#opts .opt[data-id="${e.o[1]}"]`);
+      const m = await esperar(`document.querySelector("#pollMsg.err")?.textContent`);
+      const estado = await ev(`({ mia: !!document.querySelector("#opts .opt.mine"), off: [...document.querySelectorAll("#opts .opt")].some((b) => b.disabled), guardado: localStorage.getItem("jump.voto.${e.id}") })`);
+      return (m === "Ya llegaron muchos votos desde esta conexión. Intenta más tarde." && !estado.mia && !estado.off && !estado.guardado) || JSON.stringify({ m, estado });
+    },
+    "landing-ver-todas": async () => {
+      // Con más de 8 opciones se ven las 8 más votadas y un botón «Ver todas».
+      const e = await sembrarEncuesta();
+      for (let i = 0; i < 7; i++) {
+        const { id } = await fila("insert into public.jump_encuesta_opciones (encuesta_id, texto, orden) values ($1, $2, $3) returning id", [e.id, `Idea extra número ${i + 1}`, 10 + i]);
+        if (i < 6) await sql("insert into public.jump_encuesta_votos (encuesta_id, opcion_id, origen, dispositivo_hash, ip_hash) values ($1, $2, 'publico', $3, 'ip-semilla')", [e.id, id, "extra-" + i]);
+      }
+      // Sin votos quedan «Vender por WhatsApp Business» y la idea 7: son las que no entran.
+      await landing("encuestas");
+      let b = await barras();
+      const boton = await texto("#pollMas");
+      if (b.length !== 8 || b.some((x) => x.t === "Vender por WhatsApp Business" || x.t === "Idea extra número 7")) return "8 más votadas: " + JSON.stringify(b.map((x) => x.t));
+      if (!/^Ver todas/.test(boton || "")) return "botón: " + boton;
+      await clic("#pollMas");
+      b = await barras();
+      return (b.length === 10 && !(await ev(`!!document.querySelector("#pollMas:not([hidden])")`))) || JSON.stringify(b.map((x) => x.t));
+    },
+    "landing-sin-encuesta": async () => {
+      await sql("delete from public.jump_encuestas");
+      await landing("encuestas");
+      const vacia = await ev(`({ estado: document.querySelector("#poll").dataset.estado, q: document.querySelector("#pollQ").textContent.trim(), n: document.querySelectorAll("#opts .opt").length, votos: document.querySelector("#votes").textContent.trim() })`);
+      if (vacia.estado !== "vacia" || vacia.q !== "Pronto abriremos la primera encuesta" || vacia.n || vacia.votos) return "sin encuesta: " + JSON.stringify(vacia);
+      await foto("landing-sin-encuesta");
+      // Sin encuesta abierta se ve el resultado de la última cerrada, sin poder votar.
+      const e = await sembrarEncuesta("cerrada");
+      await landing("encuestas", { limpiar: false });
+      const b = await barras();
+      const votos = await texto("#votes");
+      if (JSON.stringify(b.map((x) => x.pct)) !== JSON.stringify(["75 %", "25 %", "0 %"]) || !b.every((x) => x.off) || votos !== "Encuesta cerrada") return JSON.stringify({ b, votos });
+      await clic(`#opts .opt[data-id="${e.o[2]}"]`);
+      await dormir(400);
+      return (await votosPublicos(e.id)) === 3 || "votó en una cerrada";
+    },
+    "landing-textos": async () => {
+      await landing("encuestas");
+      const t = await ev(`(() => {
+        const s = document.querySelector("#encuestas"), q = (x) => s.querySelector(x);
+        const faq = [...document.querySelectorAll("#preguntas details")].find((d) => d.querySelector("summary").textContent.includes("propongo"));
+        return {
+          pill: q(".pill-lock")?.textContent.trim(), candado: !!q(".pill-lock svg"), lead: q(".enc-copy .lead")?.textContent.trim(),
+          pasos: [...s.querySelectorAll(".how li")].map((li) => li.querySelector("b").textContent.trim() + " — " + li.querySelector("span").textContent.trim()),
+          demo: !!(q(".demo-tag") || q(".poll-note") || q("#propose")) || /Vista de ejemplo|no guarda nada|\\(demo\\)/.test(s.textContent),
+          invita: q(".poll-invita")?.textContent.trim(), enlace: q(".poll-invita a")?.getAttribute("href"),
+          faq: faq?.querySelector("p").textContent.trim(),
+          css: [...document.styleSheets].some((x) => (x.href || "").endsWith("/jump/jc/jc.css")),
+        };
+      })()`);
+      const esperado = {
+        pill: "Vota aunque no estés inscrito", candado: false,
+        lead: "Cualquiera puede votar por el taller que le serviría más. Los inscritos, además, proponen cursos nuevos. Con eso, JUMP sabe qué talleres abrir.",
+        pasos: ["Propones — Los inscritos escriben, desde la Comunidad JUMP, el curso que les haría falta.",
+          "Todos votan — Cualquiera puede votar aquí mismo, un voto por persona.",
+          "Se abre el taller — Lo más pedido se convierte en el próximo taller de JUMP."],
+        demo: false,
+        invita: "¿Tienes una idea de curso? Inscríbete y proponla en la Comunidad JUMP.", enlace: "#postula",
+        faq: "Cuando estés inscrito, entras a la Comunidad JUMP y propones tu curso en la Encuesta del mes. Para votar no necesitas cuenta: hazlo aquí mismo, en Encuestas.",
+        css: true,
+      };
+      const malos = Object.keys(esperado).filter((k) => JSON.stringify(t[k]) !== JSON.stringify(esperado[k]));
+      return !malos.length || malos.map((k) => `${k}: ${JSON.stringify(t[k])}`).join(" | ");
+    },
+    // ---------- landing: JC ----------
+    "landing-jc-saluda": async () => {
+      await landing();
+      await esperar(`!!document.querySelector(".jc-escena:not(.entrando)")`);
+      if (movil) {
+        // En el celular la portada no deja ver su sitio al entrar: espera en la esquina, callado, hasta que bajas a la foto.
+        await dormir(1500);
+        const antes = { modo: await modoJC(), globo: await globoJC() };
+        if (antes.modo !== "esquina" || antes.globo) return "al entrar: " + JSON.stringify(antes);
+        await ev(`document.querySelector(".jc-sitio").scrollIntoView({ block: "center", behavior: "instant" }), true`);
+      }
+      const t = await esperar(`document.querySelector(".jc-globo.visible")?.textContent`, 9000);
+      if (t !== "¡Hola, soy JC! Te acompaño mientras conoces JUMP.") return "saludo: " + t;
+      if ((await modoJC()) !== "grande") return "modo: " + (await modoJC());
+      await esperar(jcQuieto);
+      const tapa = await tapaPortada();
+      if (tapa) return tapa;
+      await foto("landing-jc-saluda");
+      // La segunda visita ya no saluda: anuncia la próxima clase (C1, «Dudas del RUC», es hoy).
+      await landing("", { limpiar: false });
+      if (movil) await ev(`document.querySelector(".jc-sitio").scrollIntoView({ block: "center", behavior: "instant" }), true`);
+      const t2 = await esperar(`document.querySelector(".jc-globo.visible")?.textContent`, 9000);
+      if (!t2.includes("«Dudas del RUC»") || t2.includes("Hola")) return "segunda visita: " + t2;
+      await esperar(jcQuieto);
+      const tapa2 = await tapaPortada();
+      if (tapa2) return "con la clase: " + tapa2;
+      // Al tocarlo salta y dice otra cosa.
+      await clic(".jc-toque");
+      const t3 = await esperar(`(() => { const g = document.querySelector(".jc-globo.visible")?.textContent; return g && g !== ${JSON.stringify(t2)} ? g : null; })()`, 9000);
+      return !!t3 || "al tocarlo no cambió";
+    },
+    "landing-jc-esquina": async () => {
+      // Sin clase que anunciar y con el saludo ya dicho: al llegar a Encuestas, JC (en la esquina) habla de la encuesta.
+      await sql("update public.jump_clases set es_ejemplo = true");
+      try {
+        await landing();
+        await ev(`localStorage.setItem("jc.dichos", JSON.stringify({ "saludo:landing": Date.now() })), true`);
+        await landing("encuestas", { limpiar: false });
+        const { FRASES } = await import("../../../jump/jc/frases.js");
+        const t = await esperar(`document.querySelector(".jc-globo.visible")?.textContent`, 9000);
+        if (!FRASES.landing.encuestas.some((f) => f.texto === t)) return "en Encuestas dijo: " + t;
+        await esperar(jcQuieto);
+        const r = await ev(`(() => { const j = document.querySelector(".jc").getBoundingClientRect(); return { modo: document.querySelector(".jc-escena").dataset.modo, der: Math.round(innerWidth - j.right), abajo: Math.round(innerHeight - j.bottom), alto: Math.round(j.height) }; })()`);
+        const borde = movil ? 12 : 16;
+        if (r.modo !== "esquina" || Math.abs(r.der - borde) > 2 || Math.abs(r.abajo - borde) > 2 || r.alto !== (movil ? 84 : 120)) return "esquina: " + JSON.stringify(r);
+        await foto("landing-jc-esquina");
+        // De vuelta arriba regresa a la portada (en el celular, cuando se ve su sitio junto a Josué).
+        await ev(`scrollTo({ top: 0, behavior: "instant" }), true`);
+        if (movil) {
+          await dormir(600);
+          if ((await modoJC()) !== "esquina") return "en el celular, arriba sin ver su sitio: " + (await modoJC());
+          await ev(`document.querySelector(".jc-sitio").scrollIntoView({ block: "center", behavior: "instant" }), true`);
+        }
+        await esperar(`document.querySelector(".jc-escena").dataset.modo === "grande"`);
+        await esperar(jcQuieto);
+        const sitio = await ev(`(() => { const j = document.querySelector(".jc").getBoundingClientRect(), s = document.querySelector(".jc-sitio").getBoundingClientRect();
+          return { dx: Math.round((j.left + j.right) / 2 - (s.left + s.right) / 2), dy: Math.round(j.bottom - s.bottom) }; })()`);
+        return (Math.abs(sitio.dx) <= 2 && Math.abs(sitio.dy) <= 2) || "de vuelta en la portada: " + JSON.stringify(sitio);
+      } finally {
+        await sql("update public.jump_clases set es_ejemplo = false");
+      }
+    },
+    "landing-jc-esconder": async () => {
+      await landing();
+      await esperar(`!!document.querySelector(".jc-escena:not(.entrando)")`);
+      await clic(".jc-esconder");
+      const e1 = await ev(`({ esc: document.querySelector(".jc-escena").classList.contains("escondido"), volver: !document.querySelector(".jc-volver").hidden, mem: localStorage.getItem("jc.escondido") })`);
+      if (!e1.esc || !e1.volver || e1.mem !== "true") return "al esconderlo: " + JSON.stringify(e1);
+      // Al volver sigue escondido (y callado) hasta que lo traen con la burbuja.
+      await landing("", { limpiar: false });
+      await esperar(`!!document.querySelector(".jc-escena")`);
+      await dormir(1500);
+      const e2 = await ev(`({ esc: document.querySelector(".jc-escena").classList.contains("escondido"), volver: !document.querySelector(".jc-volver").hidden, globo: !!document.querySelector(".jc-globo.visible") })`);
+      if (!e2.esc || !e2.volver || e2.globo) return "al volver: " + JSON.stringify(e2);
+      await foto("landing-jc-escondido");
+      await clic(".jc-volver");
+      const e3 = await ev(`({ esc: document.querySelector(".jc-escena").classList.contains("escondido"), volver: !document.querySelector(".jc-volver").hidden, mem: localStorage.getItem("jc.escondido") })`);
+      return (!e3.esc && !e3.volver && e3.mem === "false") || "al traerlo: " + JSON.stringify(e3);
+    },
+    desborde: async () => {
+      // Ni JC ni su globo ensanchan la página.
+      await landing();
+      await esperar(`!!document.querySelector(".jc-escena:not(.entrando)")`);
+      await dormir(400);
+      const d = await desborde();
+      return d <= 0 || "desborde: " + d;
+    },
+    csp: async () => {
+      const csp = consola.filter((c) => /Content Security Policy|Refused to/i.test(c));
+      return csp.length === 0 || csp.join(" | ");
+    },
+  },
 };
 
 // Preparación por grupo (una vez, antes de sus escenarios).
@@ -1332,6 +1580,10 @@ const PREPARAR = {
     // Los logos de Consalva Law vienen de su sitio: sin red no cargan y no es un error de la app.
     // El límite diario de la landing responde 429 a propósito.
     erroresEsperados.push([/consalvalaw\.com/, /./], [/\/api\/jump-postular$/, /429/]);
+  },
+  jc: async () => {
+    // Los logos de Consalva Law vienen de su sitio. El tope de votos por conexión responde 429 a propósito.
+    erroresEsperados.push([/consalvalaw\.com/, /./], [/\/api\/jump-publico$/, /429/]);
   },
   emprendedor: async () => {
     const r = await apiAdmin("ejemplos-cargar");

@@ -52,6 +52,12 @@ export async function huellaIp(ip) {
   return b64u(await crypto.subtle.sign("HMAC", k, enc.encode(String(ip ?? "")))).slice(0, 32);
 }
 
+// Huella del aparato que vota en la página pública (su id al azar guardado en el navegador): nunca se guarda el id.
+export async function huellaDispositivo(id) {
+  const k = await crypto.subtle.importKey("raw", await derivar("dispositivo"), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return b64u(await crypto.subtle.sign("HMAC", k, enc.encode(String(id ?? "")))).slice(0, 32);
+}
+
 // Número al azar en [0, n) sin sesgo (muestreo por rechazo).
 function azar(n) {
   const limite = Math.floor(0x100000000 / n) * n;

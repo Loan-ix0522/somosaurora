@@ -540,6 +540,87 @@ dialog[open]{animation:dlg .22s var(--ease-out)}
 .toast button{height:32px;padding:0 12px;border:0;border-radius:9px;background:rgba(255,255,255,.12);color:var(--sun);font-weight:700;cursor:pointer}
 .toast button:hover{background:rgba(255,255,255,.2)}
 
+/* ---------- Encuesta del mes (Inicio y muro): las barras de la landing, con clases propias (.opt ya es «opcional») ---------- */
+.encuesta{max-width:760px;display:grid;gap:16px;padding:22px 24px}
+.enc-q{font-size:1.25rem}
+.enc-sub{margin-top:4px;color:var(--ink-3);font-size:13.5px}
+.enc-opts{display:grid;gap:10px}
+.enc-opt{position:relative;display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;min-height:54px;padding:10px 16px;border-radius:14px;
+  border:1.5px solid var(--line-2);background:#fff;color:var(--ink);cursor:pointer;text-align:left;overflow:hidden;font:600 15px/1.3 var(--font);
+  transition:border-color .2s ease,transform 160ms var(--ease-out)}
+.enc-fill{position:absolute;inset:0;background:var(--sun-50);transform-origin:left;transition:transform .6s var(--ease-out)}
+.enc-lbl,.enc-pct{position:relative}
+.enc-lbl{display:flex;align-items:center;gap:10px;min-width:0}
+.enc-t{overflow-wrap:anywhere}
+.enc-tick{flex:none;width:22px;height:22px;border-radius:50%;box-shadow:inset 0 0 0 1.5px var(--line-2);display:grid;place-items:center;color:transparent;transition:background-color .2s ease,color .2s ease,box-shadow .2s ease}
+.enc-tick svg{width:14px;height:14px}
+.enc-pct{flex:none;font-weight:800;font-variant-numeric:tabular-nums}
+.enc-opt .tag{flex:none;background:#fff;box-shadow:inset 0 0 0 1px var(--line-2)}
+.enc-opt.mine{border-color:var(--ink)}
+.enc-opt.mine .enc-fill{background:var(--sun-100)}
+.enc-opt.mine .enc-tick{background:var(--ink);color:var(--sun);box-shadow:none}
+.enc-opt:not(:disabled):active{transform:scale(.985)}
+.enc-opt:disabled{cursor:default}
+.encuesta[aria-busy="true"] .enc-opt:not(:disabled){cursor:progress}
+@media (hover:hover) and (pointer:fine){.enc-opt:not(:disabled):hover{border-color:var(--ink)}}
+.enc-pie{display:flex;align-items:center;justify-content:space-between;gap:8px 16px;flex-wrap:wrap}
+.enc-nota{color:var(--ink-3);font-size:13.5px}
+.enc-prop{display:grid;gap:8px;padding-top:16px;border-top:1px solid var(--line)}
+.enc-prop-fila{display:flex;gap:10px}
+.enc-prop-fila .input{flex:1;min-width:0}
+.enc-ya{padding-top:14px;border-top:1px solid var(--line);color:var(--ink-2);font-size:14px}
+@media (max-width:560px){
+  .encuesta{padding:18px 16px}
+  .enc-prop-fila{flex-direction:column}
+  .enc-prop-fila .input{flex:none}
+}
+
+/* ---------- panel: Encuestas ---------- */
+.enc-lista{display:grid;gap:16px;max-width:880px}
+.enc-adm,.enc-editor{display:grid;gap:14px;padding:20px 22px}
+.enc-adm-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.enc-adm-head h2{margin-top:8px;font-size:1.125rem}
+.enc-adm-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--ink-3);font-size:13.5px}
+.enc-adm-acts{display:flex;gap:8px;flex-wrap:wrap}
+.enc-res-lista{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.enc-res-top{display:flex;justify-content:space-between;gap:12px;font-weight:600}
+.enc-res-pct{flex:none;font-weight:800;font-variant-numeric:tabular-nums}
+.enc-res-bar{height:8px;margin:6px 0;border-radius:99px;background:#ECEFF7;overflow:hidden}
+.enc-res-bar i{display:block;height:100%;border-radius:inherit;background:var(--sun)}
+.enc-res-pie{display:flex;align-items:center;gap:6px 14px;flex-wrap:wrap;color:var(--ink-3);font-size:13px}
+.enc-res-pie .icon-btn{margin-left:auto;width:32px;height:32px}
+.enc-adm-total{color:var(--ink-3);font-size:13.5px}
+.enc-ed-campo{display:grid;gap:10px;min-width:0;margin:0;padding:0;border:0}
+.enc-ed-ops{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.enc-ed-op{display:flex;align-items:center;gap:6px}
+.enc-ed-op .input{flex:1;min-width:0}
+.enc-ed-votos{flex:none;color:var(--ink-3);font-size:12.5px;white-space:nowrap}
+.enc-ed-mas{justify-self:start}
+.enc-ed-pie{display:flex;justify-content:flex-end;gap:10px}
+@media (max-width:560px){.enc-adm,.enc-editor{padding:16px}.enc-ed-votos{display:none}}
+
+/* ---------- JC en el Inicio: se para a la derecha del saludo (jc.js lo centra en .jc-sitio-com y le alinea los pies) ---------- */
+.page-head.con-jc{position:relative;min-height:150px;padding-right:150px}
+.jc-sitio-com{position:absolute;right:12px;bottom:0;width:72px;height:150px;pointer-events:none}
+.jc-escena[data-modo="grande"] .jc{--alto-jc:150px}
+/* Grande va con la página: al bajar pasa por detrás de la barra fija de arriba del celular (.mtop, z-index 30). */
+.jc-escena[data-modo="grande"]{z-index:20}
+@media (max-width:900px){
+  .page-head.con-jc{min-height:110px;padding-right:96px}
+  .jc-sitio-com{width:53px;height:110px}
+  .jc-escena[data-modo="grande"] .jc{--alto-jc:110px}
+}
+/* Con JC en la esquina, un aviso largo no le pasa por encima ni al lugar al que camina (hasta un cuerpo a su
+   izquierda): en la computadora se angosta; en el celular se corre a la izquierda. */
+body:has(.jc-escena[data-modo="esquina"]:not(.escondido):not(.fuera)) .toast{max-width:calc(100vw - 280px)}
+@media (max-width:900px){
+  body:has(.jc-escena[data-modo="esquina"]:not(.escondido):not(.fuera)) .toast{left:16px;right:140px;width:auto;max-width:none;transform:translateY(16px)}
+  body:has(.jc-escena[data-modo="esquina"]:not(.escondido):not(.fuera)) .toast.show{transform:none}
+}
+@media (max-width:560px){
+  body:has(.jc-escena[data-modo="esquina"]:not(.escondido):not(.fuera)) .toast{right:104px}
+}
+
 /* ---------- celular ---------- */
 .tabbar{display:none}
 @media (max-width:1100px){

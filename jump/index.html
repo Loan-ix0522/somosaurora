@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Nunito:wght@900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/jump/jc/jc.css">
 <script src="/jump/js-activo.js"></script>
 <style>
 :root{
@@ -83,7 +84,7 @@ section{position:relative}
   .nav a:not(.btn):hover{color:var(--ink)}
   .card-in:hover{transform:translateY(-5px);box-shadow:0 1px 0 var(--line),0 34px 60px -36px rgba(11,22,64,.55)}
   .card-in:hover img{transform:scale(1.045)}
-  .opt:hover{border-color:var(--ink)}
+  .opt:not(:disabled):hover{border-color:var(--ink)}
   .filters button:hover:not([aria-pressed="true"]){border-color:var(--ink)}
 }
 
@@ -259,7 +260,6 @@ section{position:relative}
 .poll-top .av svg{width:24px;height:auto;overflow:visible}
 .poll-top b{display:block;font:800 16px/1.2 var(--display);font-stretch:108%}
 .poll-top small{display:block;color:var(--ink-3);font-size:13px}
-.demo-tag{margin-left:auto;align-self:flex-start;font:700 12px/1 var(--display);padding:7px 10px;border-radius:999px;background:var(--sky-50);color:var(--navy);white-space:nowrap}
 .poll h3{font-size:clamp(20px,2vw,24px);letter-spacing:-.02em;margin-bottom:18px}
 .opts{display:grid;gap:10px}
 .opt{position:relative;display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;min-height:58px;padding:10px 18px;border-radius:15px;
@@ -278,15 +278,21 @@ section{position:relative}
 .opt.new{animation:optIn 360ms var(--ease-out)}
 @keyframes optIn{from{opacity:0;transform:translateY(6px)}}
 .votes{margin-top:12px;font-size:13.5px;color:var(--ink-3)}
-.propose{display:flex;gap:10px;margin-top:20px}
-.propose label{flex:1}
-.propose input{width:100%;min-height:52px;border-radius:14px;border:1.5px solid var(--line-2);background:#fff;padding:0 16px;font-size:16px;transition:border-color .2s ease,box-shadow .2s ease}
-.propose input:focus{outline:none;border-color:var(--ink);box-shadow:0 0 0 4px rgba(255,194,26,.5)}
-.propose .btn{min-height:52px;padding:0 20px}
 .poll-msg{font-size:14px;margin-top:10px;min-height:1.4em;color:var(--ink-2)}
 .poll-msg.err{color:#B42318}
-.poll-note{margin-top:16px;padding-top:16px;border-top:1px solid var(--line);display:flex;gap:10px;font-size:13.5px;line-height:1.45;color:var(--ink-3)}
-.poll-note svg{flex:none;width:16px;height:16px;margin-top:2px}
+.opt:disabled{cursor:default}
+.opt:disabled:active{transform:none}
+.poll[aria-busy="true"] .opt:not(:disabled){cursor:progress}
+.poll-mas{all:unset;cursor:pointer;margin-top:12px;font:700 14.5px/1 var(--display);color:var(--ink);text-decoration:underline;text-decoration-color:var(--sun);text-decoration-thickness:2px;text-underline-offset:5px;border-radius:6px}
+.poll-mas:focus-visible{outline:3px solid var(--ink);outline-offset:4px}
+.poll-mas[hidden]{display:none}
+.poll-invita{margin-top:16px;padding-top:16px;border-top:1px solid var(--line);font-size:14.5px;line-height:1.45;color:var(--ink-2)}
+.poll-invita a{color:var(--ink);font-weight:700;text-decoration:underline;text-decoration-color:var(--sun);text-decoration-thickness:2px;text-underline-offset:3px}
+/* JC en la portada: se para en .jc-sitio, junto a Josué y un poco delante de él (jc.js lo centra y le alinea los pies).
+   El sitio mide lo mismo que JC grande, para saber cuándo deja de verse. Grande, va debajo de la cabecera fija. */
+.jc-sitio{position:absolute;left:0;bottom:-8%;width:16%;height:clamp(200px,min(36vh,24vw),300px);pointer-events:none}
+.jc-escena[data-modo="grande"]{z-index:20}
+.jc-escena[data-modo="grande"] .jc{--alto-jc:clamp(200px,min(36vh,24vw),300px)}
 
 /* ---------- momentos: mosaico de fotos en movimiento (idea tomada de la referencia ATRIUM) ---------- */
 .vive{
@@ -497,6 +503,8 @@ details[open] p{animation:faqIn 260ms var(--ease-out)}
   .nav a:not(.btn){display:none}
   .hero .wrap,.enc-grid,.jo-grid,.postula,.faq-grid{grid-template-columns:1fr}
   .hero-art{justify-self:center;width:min(100%,480px);margin-top:20px}
+  .jc-sitio{width:20%;height:clamp(140px,18vh,200px)}
+  .jc-escena[data-modo="grande"] .jc{--alto-jc:clamp(140px,18vh,200px)}
   .cards{grid-template-columns:repeat(2,1fr)}
   .pad-grid{grid-template-columns:1fr}
   .pad{min-height:0}
@@ -536,12 +544,11 @@ details[open] p{animation:faqIn 260ms var(--ease-out)}
   .checks{grid-template-columns:1fr}
   .row2{grid-template-columns:1fr}
   .steps{grid-template-columns:1fr}
-  .propose{flex-direction:column}
   .mz-buy{width:100%}
   .mz-tag{white-space:normal;line-height:1.15;border-radius:10px;padding:5px 7px;font-size:10px}
   .mz-pill{flex:1;justify-content:center}
   .cc-1{right:0;bottom:3%}
-  .cc-2{left:0;top:auto;bottom:22%}
+  .cc-2{left:0;top:auto;bottom:40%}
   .chip-card{padding:10px 14px 10px 10px;font-size:12.5px}
   .chip-card b{font-size:16px}
   .chip-card .ic{width:38px;height:38px}
@@ -556,7 +563,7 @@ details[open] p{animation:faqIn 260ms var(--ease-out)}
   .js [data-reveal]:not(.in){transform:none!important;filter:none}
   .js [data-reveal]{transition:opacity .45s ease!important}
   .js .hl .sw path{transition:none}
-  details[open] p,form.done .ok,.opt.new{animation:none}
+  details[open] p,form.done .ok{animation:none}
   .mz-col{animation:none}
   .vive *{transition:none!important}
 }
@@ -637,6 +644,7 @@ details[open] p{animation:faqIn 260ms var(--ease-out)}
       <div class="ha-cut"><img src="/jump/assets/josue-hero.webp" alt="" width="700" height="1058"></div>
       <div class="ha-dot"></div>
       <div class="cc cc-1"><div class="chip-card"><span class="ic"><svg viewBox="470 340 220 290"><use href="#fig-glyph"/></svg></span><span><b>100 % gratis</b>para emprendedores de La Aurora</span></div></div>
+      <span class="jc-sitio"></span>
       <div class="cc cc-2"><div class="chip-card"><span class="ic ink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2c2.5-.3 4.5 1.3 5 4.3"/></svg></span><span><b>40 cupos</b>en la primera edición</span></div></div>
     </div>
   </div>
@@ -823,31 +831,27 @@ details[open] p{animation:faqIn 260ms var(--ease-out)}
 <section class="encuestas" id="encuestas" aria-labelledby="t-encuestas">
   <div class="wrap enc-grid">
     <div class="enc-copy">
-      <p class="pill-lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Solo para emprendedores inscritos</p>
+      <p class="pill-lock">Vota aunque no estés inscrito</p>
       <h2 id="t-encuestas">Tú decides el próximo <span class="hl">taller.<svg class="sw" viewBox="0 0 200 24" preserveAspectRatio="none" aria-hidden="true"><path pathLength="1" d="M5 17 C 48 7, 120 3, 195 10"/></svg></span></h2>
-      <p class="lead">En Encuestas, los inscritos piden los cursos que de verdad les sirven. Con eso, JUMP sabe qué talleres abrir.</p>
+      <p class="lead">Cualquiera puede votar por el taller que le serviría más. Los inscritos, además, proponen cursos nuevos. Con eso, JUMP sabe qué talleres abrir.</p>
       <ol class="how">
-        <li><p><b>Propones</b><span>Escribes el curso que te haría falta para tu negocio.</span></p></li>
-        <li><p><b>La comunidad vota</b><span>Los demás inscritos apoyan las ideas que también necesitan.</span></p></li>
+        <li><p><b>Propones</b><span>Los inscritos escriben, desde la Comunidad JUMP, el curso que les haría falta.</span></p></li>
+        <li><p><b>Todos votan</b><span>Cualquiera puede votar aquí mismo, un voto por persona.</span></p></li>
         <li><p><b>Se abre el taller</b><span>Lo más pedido se convierte en el próximo taller de JUMP.</span></p></li>
       </ol>
     </div>
 
-    <div class="poll" id="poll">
+    <div class="poll" id="poll" data-estado="cargando" aria-busy="true">
       <div class="poll-top">
         <span class="av" aria-hidden="true"><svg viewBox="470 340 220 290"><use href="#fig-glyph"/></svg></span>
         <div><b>Encuesta del mes</b><small>Emprendedores JUMP</small></div>
-        <span class="demo-tag">Vista de ejemplo</span>
       </div>
-      <h3 id="pollQ">¿Qué taller te serviría más ahora?</h3>
+      <h3 id="pollQ">Cargando la encuesta…</h3>
       <div class="opts" id="opts" role="group" aria-labelledby="pollQ"></div>
       <p class="votes" id="votes"></p>
-      <form class="propose" id="propose" novalidate>
-        <label><span class="sr">Propón otro curso</span><input id="ideaIn" maxlength="70" placeholder="Propón otro curso…" autocomplete="off"></label>
-        <button class="btn btn-ink" type="submit">Proponer</button>
-      </form>
+      <button class="poll-mas" id="pollMas" type="button" hidden>Ver todas</button>
       <p class="poll-msg" id="pollMsg" role="status" aria-live="polite"></p>
-      <p class="poll-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>En la versión final solo votan y proponen los emprendedores inscritos, con su cuenta. Este demo no guarda nada.</p>
+      <p class="poll-invita">¿Tienes una idea de curso? <a href="#postula">Inscríbete</a> y proponla en la Comunidad JUMP.</p>
     </div>
   </div>
 </section>
@@ -983,7 +987,7 @@ details[open] p{animation:faqIn 260ms var(--ease-out)}
       <details open><summary>¿Cuánto cuesta?<i aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></i></summary><p>Nada. JUMP es totalmente gratis para los emprendedores seleccionados.</p></details>
       <details><summary>¿Quién puede postular?<i aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></i></summary><p>Emprendedores de La Aurora. Hay un proceso de selección previo antes de entrar al programa.</p></details>
       <details><summary>¿Necesito tener RUC o la marca registrada?<i aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></i></summary><p>No. JUMP existe justamente para ayudarte a dar el paso de la informalidad a la formalidad.</p></details>
-      <details><summary>¿Cómo propongo un curso?<i aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></i></summary><p>Cuando estés inscrito, entras a Encuestas con tu cuenta, propones el curso que te haría falta y votas por las ideas de los demás. Lo más pedido se abre como taller.</p></details>
+      <details><summary>¿Cómo propongo un curso?<i aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></i></summary><p>Cuando estés inscrito, entras a la Comunidad JUMP y propones tu curso en la Encuesta del mes. Para votar no necesitas cuenta: hazlo aquí mismo, en Encuestas.</p></details>
       <details><summary>¿Cuántos cupos hay?<i aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></i></summary><p>La primera edición abrió con 40 cupos. Los de la próxima se anuncian con la convocatoria.</p></details>
       <details><summary>¿Dónde son las actividades?<i aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></i></summary><p>El lanzamiento fue en el Edificio Platinum 2. Las sedes de clases y ferias se confirman en cada convocatoria.</p></details>
     </div>
@@ -1024,5 +1028,7 @@ details[open] p{animation:faqIn 260ms var(--ease-out)}
 </footer>
 
 <script type="module" src="/jump/landing.js"></script>
+<script type="module" src="/jump/landing-encuesta.js"></script>
+<script type="module" src="/jump/landing-jc.js"></script>
 </body>
 </html>

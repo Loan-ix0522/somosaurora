@@ -2,6 +2,7 @@
 // Ninguna función devuelve errores crudos: todas lanzan ErrorJump { codigo, mensaje, campo? }.
 //   codigo: "credenciales" | "suspendida" | "sin_acceso" | "limite" | "red" | "sesion" | "prohibido" | "invalido" | "servidor"
 //           | "limite_publicaciones" | "limite_comentarios" | "foto_ilegible" (muro)
+//           | "idea_repetida" | "ya_propuso" | "encuesta_cerrada" (encuestas)
 import { correoEmprendedor, limpiarCedula } from "./cedula.js";
 import { aISO, fechaCorta, partes } from "./fechas.js";
 import { reducirFoto, esImagenReducible, nombreReducido, sumarMaterial } from "./medios.js";
@@ -532,6 +533,108 @@ export async function borrarPostulacion(id) {
   await iniciar();
   await q(sb.from("jump_postulaciones").delete().eq("id", id));
 }
+
+// ---------- encuestas (Encuesta del mes; migración 0003) ----------
+// El emprendedor ve la abierta (o, si no hay, la última cerrada) con el porcentaje de cada opción, nunca quién votó.
+// Vota y propone con funciones de la base (jump_votar, jump_proponer), que revisan que la encuesta siga abierta.
+const SIN_ENCUESTAS = ["PGRST205", "42P01", "PGRST202"]; // falta la 0003: no hay tablas ni funciones
+export const MSG_ENCUESTA = {
+  idea_repetida: "Esa idea ya está en la lista: vota por ella.",
+  ya_propuso: "Ya propusiste un curso en esta encuesta.",
+  encuesta_cerrada: "Esta encuesta ya se cerró.",
+};
+// Sin la 0003 las tablas no existen y pedirlas deja un 404 en la consola. /api/jump-publico sabe si existen
+// (hayEncuestas); se le pregunta antes, y una vez que existen no se vuelve a preguntar.
+let hayEncuestas = false;
+async function faltaLa0003() {
+  if (hayEncuestas) return false;
+  try {
+    const d = await (await fetch("/api/jump-publico", { headers: { Accept: "application/json" } })).json();
+    if (d?.hayEncuestas === false) return true;
+    hayEncuestas = d?.hayEncuestas === true;
+  } catch { /* sin respuesta: se piden igual */ }
+  return false;
+}
+async function rpcEncuesta(fn, args) {
+  await iniciar();
+  let r;
+  try { r = await sb.rpc(fn, args); } catch { throw new ErrorJump("red"); }
+  const c = r.error && Object.keys(MSG_ENCUESTA).find((x) => (r.error.message || "").includes("jump_" + x));
+  if (c) throw new ErrorJump(c, MSG_ENCUESTA[c]);
+  return (await q(Promise.resolve(r))).data;
+}
+
+export async function cargarEncuesta() {
+  await iniciar();
+  if (await faltaLa0003()) return null;
+  const s = await sesion();
+  const campos = "id,pregunta,estado";
+  let r = await q(sb.from("jump_encuestas").select(campos).eq("estado", "abierta").limit(1), SIN_ENCUESTAS);
+  if (r.error) return null;
+  let e = r.data[0];
+  if (!e) {
+    r = await q(sb.from("jump_encuestas").select(campos).eq("estado", "cerrada").order("cerrada_en", { ascending: false, nullsFirst: false }).limit(1));
+    e = r.data[0];
+  }
+  if (!e) return null;
+  const [ops, res, voto] = await Promise.all([
+    q(sb.from("jump_encuesta_opciones").select("id,texto").eq("encuesta_id", e.id).order("orden").order("creada_en")),
+    q(sb.rpc("jump_encuesta_resultados", { p_encuesta: e.id }), SIN_ENCUESTAS),
+    q(sb.from("jump_encuesta_votos").select("opcion_id").eq("encuesta_id", e.id)), // RLS: solo el voto propio
+  ]);
+  if (res.error) return null;
+  // Quién propuso cada idea no llega al navegador: solo si es la propia («Tu idea»).
+  const por = new Map(res.data.map((x) => [x.opcion_id, x]));
+  const opciones = ops.data.map((o) => ({ id: o.id, texto: o.texto, porcentaje: por.get(o.id)?.porcentaje ?? 0, propia: !!s && !!por.get(o.id)?.propia }));
+  return { id: e.id, pregunta: e.pregunta, estado: e.estado, opciones, miVoto: voto.data[0]?.opcion_id || null, yaPropuse: opciones.some((o) => o.propia) };
+}
+
+export const votarEncuesta = async (opcionId) => { await rpcEncuesta("jump_votar", { p_opcion: opcionId }); };
+export const proponerCurso = (encuestaId, texto) => rpcEncuesta("jump_proponer", { p_encuesta: encuestaId, p_texto: texto });
+
+// El equipo (panel a/encuestas): todas las encuestas, cada opción con sus votos por origen y quién la propuso.
+// Sin la 0003 responde "sin_tabla" para que el panel lo explique.
+export async function listarEncuestas() {
+  await iniciar();
+  if (await faltaLa0003()) return "sin_tabla";
+  const r = await q(sb.from("jump_encuestas").select("id,pregunta,estado,abierta_en,cerrada_en,creada_en,es_ejemplo").order("creada_en", { ascending: false }), SIN_ENCUESTAS);
+  if (r.error) return "sin_tabla";
+  const [ops, ...conteos] = await Promise.all([
+    q(sb.from("jump_encuesta_opciones").select("id,encuesta_id,texto,orden").order("orden").order("creada_en")),
+    ...r.data.map((e) => q(sb.rpc("jump_encuesta_conteos", { p_encuesta: e.id }))),
+  ]);
+  const n = new Map(conteos.flatMap((c) => c.data).map((x) => [x.opcion_id, x]));
+  return r.data.map((e) => ({
+    id: e.id, pregunta: e.pregunta, estado: e.estado, abiertaEn: e.abierta_en, cerradaEn: e.cerrada_en, creadaEn: e.creada_en, esEjemplo: e.es_ejemplo,
+    opciones: ops.data.filter((o) => o.encuesta_id === e.id).map((o) => ({
+      id: o.id, texto: o.texto, orden: o.orden, propuestaPor: n.get(o.id)?.propuesta_por || null,
+      publico: n.get(o.id)?.publico ?? 0, inscritos: n.get(o.id)?.inscritos ?? 0,
+    })),
+  }));
+}
+
+// Dos opciones con el mismo texto (sin importar mayúsculas): la base lo rechaza (índice único).
+const MSG_OPCION_REPETIDA = "Dos opciones quedaron con el mismo texto. Revisa la lista.";
+
+// Crea (como borrador) o corrige una encuesta en un solo paso (jump_guardar_encuesta): si algo falla, no cambia nada.
+// Las opciones quedan en el orden de la lista: se corrigen las que siguen (dos pueden intercambiarse el texto), se
+// agregan las nuevas y se borran solo las que el equipo quitó (`quitar`, con sus votos). No se compara con lo que hay
+// ahora en la base: las ideas que los inscritos propusieron mientras se editaba no se tocan.
+export async function guardarEncuesta({ id, pregunta, opciones, quitar = [] }) {
+  await iniciar();
+  const r = await q(sb.rpc("jump_guardar_encuesta", {
+    p_id: id || null, p_pregunta: pregunta, p_quitar: quitar,
+    p_opciones: opciones.map((o) => (o.id ? { id: o.id, texto: o.texto } : { texto: o.texto })),
+  }), ["23505"]);
+  if (r.error) throw new ErrorJump("opcion_repetida", MSG_OPCION_REPETIDA);
+  return r.data;
+}
+
+// Abrir cierra la que esté abierta (una sola a la vez); lo hace la base, en un paso.
+export const abrirEncuesta = async (id) => { await iniciar(); await q(sb.rpc("jump_abrir_encuesta", { p: id })); };
+export const cerrarEncuesta = async (id) => { await iniciar(); await q(sb.from("jump_encuestas").update({ estado: "cerrada" }).eq("id", id)); };
+export const borrarEncuesta = async (id) => { await iniciar(); await q(sb.from("jump_encuestas").delete().eq("id", id)); };
+export const borrarOpcion = async (id) => { await iniciar(); await q(sb.from("jump_encuesta_opciones").delete().eq("id", id)); };
 
 // ---------- muro ----------
 

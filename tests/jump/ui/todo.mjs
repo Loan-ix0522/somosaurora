@@ -7,7 +7,7 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const GRUPOS = ["ingreso", "emprendedor", "admin", "muro", "ajustes", "postulaciones"];
+const GRUPOS = ["ingreso", "emprendedor", "admin", "muro", "ajustes", "postulaciones", "jc"];
 const cdp = fileURLToPath(new URL("./cdp.mjs", import.meta.url));
 const extra = process.argv.slice(2);
 let fallas = 0, escenarios = 0;

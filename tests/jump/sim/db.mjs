@@ -8,11 +8,12 @@ import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 const MIGRACIONES = new URL("../../../supabase/jump/", import.meta.url);
 const migraciones = () => readdirSync(MIGRACIONES).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();
 
-// Aplica base.sql y todas las migraciones de JUMP, en orden.
-export async function crearBase() {
+// Aplica base.sql y las migraciones de JUMP, en orden. { hasta: "0002" } se detiene ahí (para probar un proyecto
+// al que todavía le falta una migración).
+export async function crearBase({ hasta } = {}) {
   const db = await PGlite.create({ extensions: { pgcrypto } });
   await db.exec(readFileSync(new URL("base.sql", import.meta.url), "utf8"));
-  for (const f of migraciones()) await aplicarMigracion(db, f.slice(0, 4));
+  for (const f of migraciones()) if (!hasta || f.slice(0, 4) <= hasta) await aplicarMigracion(db, f.slice(0, 4));
   return db;
 }
 

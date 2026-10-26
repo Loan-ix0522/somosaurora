@@ -5,6 +5,7 @@
 // Grupos: los de ESCENARIOS (abajo). Imprime un JSON { resultados: {escenario: "ok" | detalle}, consola: [...] }
 // y sale con código 1 si algo falla. Necesita Chrome y red (supabase-js viene de jsDelivr, como en producción).
 // Escritorio: 1366 px de ancho (JUMP_UI_ANCHO=1440 lo cambia); móvil: 390 px. Los puertos son fijos: una corrida a la vez.
+// JUMP_UI_SOLO=texto corre solo los escenarios del grupo cuyo nombre lo contiene.
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -46,9 +47,12 @@ const pendientes = new Map();
 const consola = [];
 // Respuestas de error que un escenario provoca a propósito (p. ej. el 400 del límite diario del muro): no cuentan como falla.
 let erroresEsperados = [];
+// Las direcciones que pidió la página (para ver qué se puede guardar en caché).
+const pedidos = [];
 ws.addEventListener("message", (e) => {
   const m = JSON.parse(e.data);
   if (m.id && pendientes.has(m.id)) { pendientes.get(m.id)(m); pendientes.delete(m.id); }
+  if (m.method === "Network.requestWillBeSent") pedidos.push(m.params.request.url);
   if (m.method === "Runtime.exceptionThrown") consola.push("EXC " + (m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text));
   if (m.method === "Runtime.consoleAPICalled" && m.params.type === "error") consola.push("CON " + m.params.args.map((a) => a.value ?? a.description).join(" "));
   if (m.method === "Log.entryAdded" && m.params.entry.level === "error") {
@@ -174,6 +178,49 @@ async function abrirLanding() {
   await send("Page.navigate", { url: sim.url + "/jump/#postula" });
   await esperar(`document.readyState === "complete" && !!document.querySelector("#sendBtn")`); // el módulo ya corrió (va diferido)
 }
+// La landing completa, limpia o conservando lo que guardó el navegador (el voto del aparato, lo que ya dijo JC).
+// Espera a que la encuesta termine de cargar (#poll[data-estado] deja de ser «cargando»).
+async function landing(hash = "", { limpiar = true } = {}) {
+  if (limpiar) await send("Storage.clearDataForOrigin", { origin: sim.url, storageTypes: "local_storage,session_storage,cookies" });
+  await send("Page.navigate", { url: "about:blank" });
+  await send("Page.navigate", { url: sim.url + "/jump/" + (hash ? "#" + hash : "") });
+  await esperar(`document.readyState === "complete" && !!document.querySelector("#poll")?.dataset.estado && document.querySelector("#poll").dataset.estado !== "cargando"`);
+}
+// Una encuesta real con tres opciones y cuatro votos (tres públicos y uno de inscrito): 3 / 1 / 0 → 75 %, 25 %, 0 %.
+async function sembrarEncuesta(estado = "abierta") {
+  await sql("delete from public.jump_encuestas");
+  const { id } = await fila("insert into public.jump_encuestas (pregunta, estado) values ('¿Qué taller quieres para diciembre?', $1) returning id", [estado]);
+  const o = [];
+  for (const [i, t] of ["Fotos de producto con el celular", "Cómo sacar el RUC sin enredos", "Vender por WhatsApp Business"].entries())
+    o.push((await fila("insert into public.jump_encuesta_opciones (encuesta_id, texto, orden) values ($1, $2, $3) returning id", [id, t, i + 1])).id);
+  await sql(`insert into public.jump_encuesta_votos (encuesta_id, opcion_id, origen, dispositivo_hash, ip_hash) values
+    ($1, $2, 'publico', 'semilla-1', 'ip-semilla'), ($1, $2, 'publico', 'semilla-2', 'ip-semilla'), ($1, $3, 'publico', 'semilla-3', 'ip-semilla')`, [id, o[0], o[1]]);
+  await sql("insert into public.jump_encuesta_votos (encuesta_id, opcion_id, origen, user_id) values ($1, $2, 'inscrito', $3)", [id, o[0], X.E.id]);
+  return { id, o };
+}
+const votosPublicos = async (id) => (await fila("select count(*)::int n from public.jump_encuesta_votos where encuesta_id = $1 and origen = 'publico'", [id])).n;
+const barras = () => ev(`[...document.querySelectorAll("#opts .opt")].map((b) => ({ id: b.dataset.id, t: b.querySelector(".lbl").textContent.trim(),
+  pct: b.querySelector(".pct").textContent.trim(), mia: b.classList.contains("mine"), off: b.disabled }))`);
+const barrasCom = () => ev(`[...document.querySelectorAll("#page [data-encuesta] .enc-opt")].map((b) => ({ id: b.dataset.id, t: b.querySelector(".enc-t").textContent.trim(),
+  pct: b.querySelector(".enc-pct").textContent.trim(), mia: b.classList.contains("mine"), off: b.disabled }))`);
+// JC: lo que dice (el globo visible), dónde está y si ya terminó de moverse.
+const globoJC = () => ev(`document.querySelector(".jc-globo.visible")?.textContent ?? null`);
+const modoJC = () => ev(`document.querySelector(".jc-escena")?.dataset.modo ?? null`);
+const jcQuieto = `!!document.querySelector(".jc") && !document.querySelector(".jc").getAnimations().length`;
+// ¿JC (o su globo) tapa los botones de la portada o la cara de Josué? La cara: el tercio de arriba de la foto, al centro.
+const tapaPortada = () => ev(`(() => {
+  const cruza = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+  const img = document.querySelector(".ha-cut img").getBoundingClientRect();
+  const cara = { left: img.left + img.width * .35, right: img.left + img.width * .72, top: img.top, bottom: img.top + img.height * .34 };
+  const jc = document.querySelector(".jc").getBoundingClientRect(), g = document.querySelector(".jc-globo.visible")?.getBoundingClientRect();
+  const botones = [...document.querySelectorAll(".hero-copy .ctas a, #logoBtn")].map((e) => e.getBoundingClientRect());
+  const r = [];
+  if (botones.some((b) => cruza(jc, b))) r.push("JC tapa un botón");
+  if (cruza(jc, cara)) r.push("JC tapa la cara de Josué");
+  if (g && cruza(g, cara)) r.push("el globo tapa la cara de Josué");
+  if (g && botones.some((b) => cruza(g, b))) r.push("el globo tapa un botón");
+  return r.join("; ");
+})()`);
 async function llenarPostula({ nombre, wa, negocio, sector, rubro = "Comida y bebidas", ruc = "no" }) {
   await escribir("#f-nombre", nombre);
   await escribir("#f-wa", wa);
@@ -1320,6 +1367,627 @@ const ESCENARIOS = {
       return csp.length === 0 || csp.join(" | ");
     },
   },
+  jc: {
+    // ---------- landing: encuesta real ----------
+    "landing-encuesta-real": async () => {
+      const e = await sembrarEncuesta();
+      pedidos.length = 0;
+      await landing("encuestas");
+      // Quien no ha votado pide la dirección de siempre: la que la red de Vercel tiene guardada.
+      const lecturas = pedidos.filter((u) => u.includes("/api/jump-publico"));
+      if (lecturas.length !== 1 || !lecturas[0].endsWith("/api/jump-publico")) return "lecturas: " + JSON.stringify(lecturas);
+      const estado = await ev(`document.querySelector("#poll").dataset.estado`);
+      const q = await texto("#pollQ");
+      if (estado !== "abierta" || q !== "¿Qué taller quieres para diciembre?") return JSON.stringify({ estado, q });
+      const b = await barras();
+      const esperado = [["Fotos de producto con el celular", "75 %"], ["Cómo sacar el RUC sin enredos", "25 %"], ["Vender por WhatsApp Business", "0 %"]];
+      if (JSON.stringify(b.map((x) => [x.t, x.pct])) !== JSON.stringify(esperado) || b.some((x) => x.mia || x.off) || b[0].id !== e.o[0]) return "barras: " + JSON.stringify(b);
+      const votos = await texto("#votes");
+      if (votos !== "Toca una opción para votar") return "votos: " + votos;
+      // Las barras suben hasta su porcentaje al verse la tarjeta (en el celular queda debajo del texto de la sección).
+      await ev(`document.querySelector("#poll").scrollIntoView({ block: "center", behavior: "instant" }), true`);
+      await esperar(`document.querySelector("#opts .opt .fill").getBoundingClientRect().width > document.querySelector("#opts .opt").getBoundingClientRect().width * .7`);
+      await foto("landing-encuesta");
+      return true;
+    },
+    "landing-voto-cambia": async () => {
+      const e = await sembrarEncuesta();
+      await landing("encuestas");
+      await clic(`#opts .opt[data-id="${e.o[1]}"]`);
+      await esperar(`document.querySelector("#opts .opt.mine")?.dataset.id === ${JSON.stringify(e.o[1])}`);
+      let b = await barras();
+      if (JSON.stringify(b.map((x) => x.pct)) !== JSON.stringify(["60 %", "40 %", "0 %"])) return "después de votar: " + JSON.stringify(b);
+      if ((await texto("#votes")) !== "Ya votaste · puedes cambiar tu voto") return "votos: " + (await texto("#votes"));
+      if ((await votosPublicos(e.id)) !== 4) return "votos públicos: " + (await votosPublicos(e.id));
+      const guardado = await ev(`({ voto: localStorage.getItem("jump.voto.${e.id}"), aparato: localStorage.getItem("jump.dispositivo") })`);
+      if (guardado.voto !== e.o[1] || !/^[A-Za-z0-9_-]{16,64}$/.test(guardado.aparato || "")) return "guardado: " + JSON.stringify(guardado);
+      await foto("landing-voto");
+      // Al volver, la página recuerda el voto y lo muestra contado (sin caché vieja); cambiarlo no suma otro.
+      pedidos.length = 0;
+      await landing("encuestas", { limpiar: false });
+      // Recién votó: pide una dirección que la caché de Vercel no tiene, para ver su voto contado.
+      const lecturas = pedidos.filter((u) => u.includes("/api/jump-publico"));
+      if (lecturas.length !== 1 || !/\/api\/jump-publico\?v=\d+$/.test(lecturas[0])) return "lectura al volver: " + JSON.stringify(lecturas);
+      if ((await ev(`document.querySelector("#opts .opt.mine")?.dataset.id`)) !== e.o[1]) return "no recordó el voto";
+      if (JSON.stringify((await barras()).map((x) => x.pct)) !== JSON.stringify(["60 %", "40 %", "0 %"])) return "al recargar: " + JSON.stringify(await barras());
+      await clic(`#opts .opt[data-id="${e.o[2]}"]`);
+      await esperar(`document.querySelector("#opts .opt.mine")?.dataset.id === ${JSON.stringify(e.o[2])}`);
+      b = await barras();
+      const n = await votosPublicos(e.id);
+      const mio = await fila("select opcion_id from public.jump_encuesta_votos where encuesta_id = $1 and origen = 'publico' and dispositivo_hash not like 'semilla-%'", [e.id]);
+      return (JSON.stringify(b.map((x) => x.pct)) === JSON.stringify(["60 %", "20 %", "20 %"]) && n === 4 && mio.opcion_id === e.o[2]) || JSON.stringify({ b, n, mio });
+    },
+    "landing-voto-tope": async () => {
+      // Treinta aparatos ya votaron desde esta conexión: el siguiente se frena con un aviso y nada se marca como suyo.
+      const { huellaIp } = await import("../../../api/_jump/secretos.js");
+      const h = await huellaIp(""); // el simulador no pasa X-Forwarded-For: todo el navegador es la misma conexión
+      const e = await sembrarEncuesta();
+      await sql("insert into public.jump_encuesta_votos (encuesta_id, opcion_id, origen, dispositivo_hash, ip_hash) select $1, $2, 'publico', 'tope-' || i, $3 from generate_series(1, 30) i", [e.id, e.o[2], h]);
+      await landing("encuestas");
+      await clic(`#opts .opt[data-id="${e.o[1]}"]`);
+      const m = await esperar(`document.querySelector("#pollMsg.err")?.textContent`);
+      const estado = await ev(`({ mia: !!document.querySelector("#opts .opt.mine"), off: [...document.querySelectorAll("#opts .opt")].some((b) => b.disabled), guardado: localStorage.getItem("jump.voto.${e.id}") })`);
+      // El tope dura toda la encuesta: «más tarde» no sirve; desde otra red, sí.
+      return (m === "Ya votaron muchas personas desde esta conexión. Intenta desde otra red." && !estado.mia && !estado.off && !estado.guardado) || JSON.stringify({ m, estado });
+    },
+    "landing-ver-todas": async () => {
+      // Con más de 8 opciones se ven las 8 más votadas y un botón «Ver todas».
+      const e = await sembrarEncuesta();
+      for (let i = 0; i < 7; i++) {
+        const { id } = await fila("insert into public.jump_encuesta_opciones (encuesta_id, texto, orden) values ($1, $2, $3) returning id", [e.id, `Idea extra número ${i + 1}`, 10 + i]);
+        if (i < 6) await sql("insert into public.jump_encuesta_votos (encuesta_id, opcion_id, origen, dispositivo_hash, ip_hash) values ($1, $2, 'publico', $3, 'ip-semilla')", [e.id, id, "extra-" + i]);
+      }
+      // Sin votos quedan «Vender por WhatsApp Business» y la idea 7: son las que no entran.
+      await landing("encuestas");
+      let b = await barras();
+      const boton = await texto("#pollMas");
+      if (b.length !== 8 || b.some((x) => x.t === "Vender por WhatsApp Business" || x.t === "Idea extra número 7")) return "8 más votadas: " + JSON.stringify(b.map((x) => x.t));
+      if (!/^Ver todas/.test(boton || "")) return "botón: " + boton;
+      await clic("#pollMas");
+      b = await barras();
+      return (b.length === 10 && !(await ev(`!!document.querySelector("#pollMas:not([hidden])")`))) || JSON.stringify(b.map((x) => x.t));
+    },
+    "landing-sin-encuesta": async () => {
+      await sql("delete from public.jump_encuestas");
+      await landing("encuestas");
+      const vacia = await ev(`({ estado: document.querySelector("#poll").dataset.estado, q: document.querySelector("#pollQ").textContent.trim(), n: document.querySelectorAll("#opts .opt").length, votos: document.querySelector("#votes").textContent.trim() })`);
+      if (vacia.estado !== "vacia" || vacia.q !== "Pronto abriremos la primera encuesta" || vacia.n || vacia.votos) return "sin encuesta: " + JSON.stringify(vacia);
+      await foto("landing-sin-encuesta");
+      // Sin encuesta abierta se ve el resultado de la última cerrada, sin poder votar.
+      const e = await sembrarEncuesta("cerrada");
+      await landing("encuestas", { limpiar: false });
+      const b = await barras();
+      const votos = await texto("#votes");
+      if (JSON.stringify(b.map((x) => x.pct)) !== JSON.stringify(["75 %", "25 %", "0 %"]) || !b.every((x) => x.off) || votos !== "Encuesta cerrada") return JSON.stringify({ b, votos });
+      await clic(`#opts .opt[data-id="${e.o[2]}"]`);
+      await dormir(400);
+      return (await votosPublicos(e.id)) === 3 || "votó en una cerrada";
+    },
+    "landing-textos": async () => {
+      await landing("encuestas");
+      const t = await ev(`(() => {
+        const s = document.querySelector("#encuestas"), q = (x) => s.querySelector(x);
+        const faq = [...document.querySelectorAll("#preguntas details")].find((d) => d.querySelector("summary").textContent.includes("propongo"));
+        return {
+          pill: q(".pill-lock")?.textContent.trim(), candado: !!q(".pill-lock svg"), lead: q(".enc-copy .lead")?.textContent.trim(),
+          pasos: [...s.querySelectorAll(".how li")].map((li) => li.querySelector("b").textContent.trim() + " — " + li.querySelector("span").textContent.trim()),
+          demo: !!(q(".demo-tag") || q(".poll-note") || q("#propose")) || /Vista de ejemplo|no guarda nada|\\(demo\\)/.test(s.textContent),
+          invita: q(".poll-invita")?.textContent.trim(), enlace: q(".poll-invita a")?.getAttribute("href"),
+          faq: faq?.querySelector("p").textContent.trim(),
+          css: [...document.styleSheets].some((x) => (x.href || "").endsWith("/jump/jc/jc.css")),
+        };
+      })()`);
+      const esperado = {
+        pill: "Vota aunque no estés inscrito", candado: false,
+        lead: "Cualquiera puede votar por el taller que le serviría más. Los inscritos, además, proponen cursos nuevos. Con eso, JUMP sabe qué talleres abrir.",
+        pasos: ["Propones — Los inscritos escriben, desde la Comunidad JUMP, el curso que les haría falta.",
+          "Todos votan — Cualquiera puede votar aquí mismo, un voto por persona.",
+          "Se abre el taller — Lo más pedido se convierte en el próximo taller de JUMP."],
+        demo: false,
+        invita: "¿Tienes una idea de curso? Inscríbete y proponla en la Comunidad JUMP.", enlace: "#postula",
+        faq: "Cuando estés inscrito, entras a la Comunidad JUMP y propones tu curso en la Encuesta del mes. Para votar no necesitas cuenta: hazlo aquí mismo, en Encuestas.",
+        css: true,
+      };
+      const malos = Object.keys(esperado).filter((k) => JSON.stringify(t[k]) !== JSON.stringify(esperado[k]));
+      return !malos.length || malos.map((k) => `${k}: ${JSON.stringify(t[k])}`).join(" | ");
+    },
+    // ---------- landing: JC ----------
+    "landing-jc-saluda": async () => {
+      await landing();
+      await esperar(`!!document.querySelector(".jc-escena:not(.entrando)")`);
+      if (movil) {
+        // En el celular la portada no deja ver su sitio al entrar: espera en la esquina, callado, hasta que bajas a la foto.
+        await dormir(1500);
+        const antes = { modo: await modoJC(), globo: await globoJC() };
+        if (antes.modo !== "esquina" || antes.globo) return "al entrar: " + JSON.stringify(antes);
+        await ev(`document.querySelector(".jc-sitio").scrollIntoView({ block: "center", behavior: "instant" }), true`);
+      }
+      const t = await esperar(`document.querySelector(".jc-globo.visible")?.textContent`, 9000);
+      if (t !== "¡Hola, soy JC! Te acompaño mientras conoces JUMP.") return "saludo: " + t;
+      if ((await modoJC()) !== "grande") return "modo: " + (await modoJC());
+      await esperar(jcQuieto);
+      const tapa = await tapaPortada();
+      if (tapa) return tapa;
+      await foto("landing-jc-saluda");
+      // La segunda visita ya no saluda: anuncia la próxima clase (C1, «Dudas del RUC», es hoy).
+      await landing("", { limpiar: false });
+      if (movil) await ev(`document.querySelector(".jc-sitio").scrollIntoView({ block: "center", behavior: "instant" }), true`);
+      const t2 = await esperar(`document.querySelector(".jc-globo.visible")?.textContent`, 9000);
+      if (!t2.includes("«Dudas del RUC»") || t2.includes("Hola")) return "segunda visita: " + t2;
+      await esperar(jcQuieto);
+      const tapa2 = await tapaPortada();
+      if (tapa2) return "con la clase: " + tapa2;
+      // Al tocarlo salta y dice otra cosa.
+      await clic(".jc-toque");
+      const t3 = await esperar(`(() => { const g = document.querySelector(".jc-globo.visible")?.textContent; return g && g !== ${JSON.stringify(t2)} ? g : null; })()`, 9000);
+      return !!t3 || "al tocarlo no cambió";
+    },
+    "landing-jc-esquina": async () => {
+      // Sin clase que anunciar y con el saludo ya dicho: al llegar a Encuestas, JC (en la esquina) habla de la encuesta.
+      await sql("update public.jump_clases set es_ejemplo = true");
+      try {
+        await landing();
+        await ev(`localStorage.setItem("jc.dichos", JSON.stringify({ "saludo:landing": Date.now() })), true`);
+        await landing("encuestas", { limpiar: false });
+        const { FRASES } = await import("../../../jump/jc/frases.js");
+        const t = await esperar(`document.querySelector(".jc-globo.visible")?.textContent`, 9000);
+        if (!FRASES.landing.encuestas.some((f) => f.texto === t)) return "en Encuestas dijo: " + t;
+        await esperar(jcQuieto);
+        const r = await ev(`(() => { const j = document.querySelector(".jc").getBoundingClientRect(); return { modo: document.querySelector(".jc-escena").dataset.modo, der: Math.round(innerWidth - j.right), abajo: Math.round(innerHeight - j.bottom), alto: Math.round(j.height) }; })()`);
+        const borde = movil ? 12 : 16;
+        if (r.modo !== "esquina" || Math.abs(r.der - borde) > 2 || Math.abs(r.abajo - borde) > 2 || r.alto !== (movil ? 84 : 120)) return "esquina: " + JSON.stringify(r);
+        await foto("landing-jc-esquina");
+        // De vuelta arriba regresa a la portada (en el celular, cuando se ve su sitio junto a Josué).
+        await ev(`scrollTo({ top: 0, behavior: "instant" }), true`);
+        if (movil) {
+          await dormir(600);
+          if ((await modoJC()) !== "esquina") return "en el celular, arriba sin ver su sitio: " + (await modoJC());
+          await ev(`document.querySelector(".jc-sitio").scrollIntoView({ block: "center", behavior: "instant" }), true`);
+        }
+        await esperar(`document.querySelector(".jc-escena").dataset.modo === "grande"`);
+        await esperar(jcQuieto);
+        const sitio = await ev(`(() => { const j = document.querySelector(".jc").getBoundingClientRect(), s = document.querySelector(".jc-sitio").getBoundingClientRect();
+          return { dx: Math.round((j.left + j.right) / 2 - (s.left + s.right) / 2), dy: Math.round(j.bottom - s.bottom) }; })()`);
+        return (Math.abs(sitio.dx) <= 2 && Math.abs(sitio.dy) <= 2) || "de vuelta en la portada: " + JSON.stringify(sitio);
+      } finally {
+        await sql("update public.jump_clases set es_ejemplo = false");
+      }
+    },
+    "landing-jc-esconder": async () => {
+      await landing();
+      await esperar(`!!document.querySelector(".jc-escena:not(.entrando)")`);
+      await clic(".jc-esconder");
+      const e1 = await ev(`({ esc: document.querySelector(".jc-escena").classList.contains("escondido"), volver: !document.querySelector(".jc-volver").hidden, mem: localStorage.getItem("jc.escondido") })`);
+      if (!e1.esc || !e1.volver || e1.mem !== "true") return "al esconderlo: " + JSON.stringify(e1);
+      // Al volver sigue escondido (y callado) hasta que lo traen con la burbuja.
+      await landing("", { limpiar: false });
+      await esperar(`!!document.querySelector(".jc-escena")`);
+      await dormir(1500);
+      const e2 = await ev(`({ esc: document.querySelector(".jc-escena").classList.contains("escondido"), volver: !document.querySelector(".jc-volver").hidden, globo: !!document.querySelector(".jc-globo.visible") })`);
+      if (!e2.esc || !e2.volver || e2.globo) return "al volver: " + JSON.stringify(e2);
+      await foto("landing-jc-escondido");
+      await clic(".jc-volver");
+      const e3 = await ev(`({ esc: document.querySelector(".jc-escena").classList.contains("escondido"), volver: !document.querySelector(".jc-volver").hidden, mem: localStorage.getItem("jc.escondido") })`);
+      return (!e3.esc && !e3.volver && e3.mem === "false") || "al traerlo: " + JSON.stringify(e3);
+    },
+    // ---------- comunidad: Encuesta del mes ----------
+    "comunidad-encuesta-inicio": async () => {
+      // María (E) ya votó por la primera opción en la siembra: la ve marcada y puede cambiarla.
+      const e = await sembrarEncuesta();
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector("#page [data-encuesta]")`);
+      const t = await ev(`(() => { const c = document.querySelector("#page [data-encuesta]");
+        return { id: c.dataset.encuesta, q: c.querySelector(".enc-q").textContent.trim(), nota: c.querySelector(".enc-nota").textContent.trim(),
+          form: !!c.querySelector("#proponerForm") }; })()`);
+      const b = await barrasCom();
+      if (t.id !== e.id || t.q !== "¿Qué taller quieres para diciembre?" || !t.form) return JSON.stringify(t);
+      if (JSON.stringify(b.map((x) => [x.t, x.pct, x.mia])) !== JSON.stringify([["Fotos de producto con el celular", "75 %", true], ["Cómo sacar el RUC sin enredos", "25 %", false], ["Vender por WhatsApp Business", "0 %", false]])) return "barras: " + JSON.stringify(b);
+      if (t.nota !== "Ya votaste · puedes cambiar tu voto") return "nota: " + t.nota;
+      await foto("e-inicio-encuesta");
+      // Sin encuesta (o sin la 0003) el Inicio no muestra la tarjeta ni falla.
+      await sql("delete from public.jump_encuestas");
+      await abrir("e/inicio", { limpiar: false });
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector(".page-head h1")`);
+      return !(await ev(`!!document.querySelector("#page [data-encuesta]")`)) || "tarjeta sin encuesta";
+    },
+    "comunidad-votar-cambiar": async () => {
+      const e = await sembrarEncuesta();
+      await entrar(X.E2);
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector("#page [data-encuesta]")`);
+      if ((await texto("#page .enc-nota")) !== "Toca una opción para votar") return "nota: " + (await texto("#page .enc-nota"));
+      await clic(`#page [data-act="votar-encuesta"][data-id="${e.o[1]}"]`);
+      await esperar(`document.querySelector("#page .enc-opt.mine")?.dataset.id === ${JSON.stringify(e.o[1])}`);
+      let b = await barrasCom();
+      if (JSON.stringify(b.map((x) => x.pct)) !== JSON.stringify(["60 %", "40 %", "0 %"])) return "después de votar: " + JSON.stringify(b);
+      if ((await texto("#page .enc-nota")) !== "Ya votaste · puedes cambiar tu voto") return "nota después: " + (await texto("#page .enc-nota"));
+      await clic(`#page [data-act="votar-encuesta"][data-id="${e.o[2]}"]`);
+      await esperar(`document.querySelector("#page .enc-opt.mine")?.dataset.id === ${JSON.stringify(e.o[2])}`);
+      b = await barrasCom();
+      const filas = (await sql("select opcion_id, origen from public.jump_encuesta_votos where encuesta_id = $1 and user_id = $2", [e.id, X.E2.id])).rows;
+      return (JSON.stringify(b.map((x) => x.pct)) === JSON.stringify(["60 %", "20 %", "20 %"]) && filas.length === 1 && filas[0].opcion_id === e.o[2] && filas[0].origen === "inscrito")
+        || JSON.stringify({ b, filas });
+    },
+    "comunidad-proponer-una-vez": async () => {
+      const e = await sembrarEncuesta();
+      await entrar(X.E2);
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector("#proponerForm")`);
+      await clic("#proponerForm [type=submit]");
+      const vacio = await esperar(`document.querySelector("#propIdeaErr:not([hidden])")?.textContent`);
+      if (!vacio.includes("curso")) return "error vacío: " + vacio;
+      await escribir("#propIdea", "  Cómo vender   por TikTok ");
+      await clic("#proponerForm [type=submit]");
+      await esperar(`[...document.querySelectorAll("#page .enc-opt")].some((b) => b.textContent.includes("Cómo vender por TikTok"))`);
+      const t = await ev(`(() => { const o = [...document.querySelectorAll("#page .enc-opt")].find((b) => b.textContent.includes("Cómo vender por TikTok"));
+        return { mia: o.classList.contains("mine"), tuya: !!o.querySelector(".tag"), form: !!document.querySelector("#proponerForm"), nota: document.querySelector("#page .enc-ya")?.textContent.trim() }; })()`);
+      const f = await fila("select o.texto, o.propuesta_por, v.opcion_id = o.id as votada from public.jump_encuesta_opciones o join public.jump_encuesta_votos v on v.encuesta_id = o.encuesta_id and v.user_id = $2 where o.encuesta_id = $1 and o.propuesta_por = $2", [e.id, X.E2.id]);
+      await foto("e-encuesta-propuesta");
+      return (t.mia && t.tuya && !t.form && t.nota === "Ya propusiste un curso en esta encuesta." && f?.texto === "Cómo vender por TikTok" && f.votada)
+        || JSON.stringify({ t, f });
+    },
+    "comunidad-idea-repetida": async () => {
+      const e = await sembrarEncuesta();
+      await entrar(X.E2);
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector("#proponerForm")`);
+      // Ya está en la lista (con otras mayúsculas y espacios): se avisa sin ir a la base.
+      await escribir("#propIdea", " cómo SACAR el ruc   sin enredos ");
+      await clic("#proponerForm [type=submit]");
+      const m1 = await esperar(`document.querySelector("#propIdeaErr:not([hidden])")?.textContent`);
+      if (m1 !== "Esa idea ya está en la lista: vota por ella.") return "repetida en pantalla: " + m1;
+      // Otro la propuso después de abrir la página: la base la rechaza y se dice lo mismo.
+      await sql("insert into public.jump_encuesta_opciones (encuesta_id, texto, orden) values ($1, 'Cursos de TikTok', 9)", [e.id]);
+      erroresEsperados.push([/\/rpc\/jump_proponer$/, /status of 409/]); // el rechazo de la base es a propósito
+      await escribir("#propIdea", "Cursos de TikTok");
+      await clic("#proponerForm [type=submit]");
+      await esperar(`document.querySelector("#propIdeaErr:not([hidden])")?.textContent === "Esa idea ya está en la lista: vota por ella." && document.querySelector("#propIdea").value === "Cursos de TikTok"`);
+      const n = (await fila("select count(*)::int n from public.jump_encuesta_opciones where encuesta_id = $1", [e.id])).n;
+      return n === 4 || "opciones: " + n;
+    },
+    "comunidad-muro-fijada": async () => {
+      const e = await sembrarEncuesta();
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio"`);
+      await ir("e/muro");
+      await esperar(`location.hash === "#e/muro" && !!document.querySelector("#muroForm") && !!document.querySelector("#page [data-encuesta]")`);
+      const orden = await ev(`(() => { const c = document.querySelector("#page [data-encuesta]"), f = document.querySelector("#muroForm");
+        return { antes: !!(c.compareDocumentPosition(f) & Node.DOCUMENT_POSITION_FOLLOWING), id: c.dataset.encuesta }; })()`);
+      if (!orden.antes || orden.id !== e.id) return "en el muro: " + JSON.stringify(orden);
+      await foto("e-muro-encuesta");
+      // El equipo no la ve en su muro (la maneja desde su panel).
+      await entrarEquipo();
+      await ir("a/muro");
+      await esperar(`location.hash === "#a/muro" && !!document.querySelector("#muroLista")`);
+      return !(await ev(`!!document.querySelector("#page [data-encuesta]")`)) || "el equipo ve la tarjeta en su muro";
+    },
+    "panel-crear-abrir": async () => {
+      await sql("delete from public.jump_encuestas");
+      await entrarEquipo();
+      await ir("a/encuestas");
+      await esperar(`location.hash === "#a/encuestas" && !!document.querySelector('[data-act="enc-nueva"]')`);
+      const vacio = await esperar(`document.querySelector("#page .empty")?.textContent`);
+      if (!vacio.includes("Todavía no hay encuestas")) return "vacío: " + vacio;
+      await clic('[data-act="enc-nueva"]');
+      await esperar(`!!document.querySelector("#encForm #encPregunta")`);
+      // Sin pregunta ni opciones: lo dice en los campos y no guarda.
+      await clic("#encForm [type=submit]");
+      const e1 = await esperar(`document.querySelector("#encPreguntaErr:not([hidden])")?.textContent`);
+      const e2 = await esperar(`document.querySelector("#encOpsErr:not([hidden])")?.textContent`);
+      if (!e1.includes("pregunta") || !e2.includes("2 opciones")) return "errores: " + JSON.stringify([e1, e2]);
+      await escribir("#encPregunta", "¿Qué taller quieres para enero?");
+      await escribir("#encForm .enc-ed-op:nth-child(1) input", "Cómo calcular mis costos");
+      await escribir("#encForm .enc-ed-op:nth-child(2) input", "Fotos que venden");
+      await clic('[data-act="enc-op-agregar"]');
+      await escribir("#encForm .enc-ed-op:nth-child(3) input", "Mi primera factura");
+      // La tercera sube al primer lugar.
+      await clic('#encForm .enc-ed-op:nth-child(3) [data-act="enc-op-subir"]');
+      await clic('#encForm .enc-ed-op:nth-child(2) [data-act="enc-op-subir"]');
+      await foto("a-encuesta-editor");
+      await clic("#encForm [type=submit]");
+      const id = await esperar(`!document.querySelector("#encForm") && document.querySelector("#page [data-enc-admin]")?.dataset.encAdmin`);
+      const e = await fila("select estado, pregunta from public.jump_encuestas where id = $1", [id]);
+      const ops = (await sql("select texto from public.jump_encuesta_opciones where encuesta_id = $1 order by orden", [id])).rows.map((r) => r.texto);
+      if (e.estado !== "borrador" || e.pregunta !== "¿Qué taller quieres para enero?" || JSON.stringify(ops) !== JSON.stringify(["Mi primera factura", "Cómo calcular mis costos", "Fotos que venden"]))
+        return JSON.stringify({ e, ops });
+      await clic(`[data-act="enc-abrir"][data-id="${id}"]`);
+      await esperar(`document.querySelector('[data-enc-admin="${id}"] .pill')?.textContent.trim() === "Abierta"`);
+      await foto("a-encuesta-abierta");
+      const estado = (await fila("select estado from public.jump_encuestas where id = $1", [id])).estado;
+      return estado === "abierta" || "estado: " + estado;
+    },
+    "panel-abrir-cierra-otra": async () => {
+      const e = await sembrarEncuesta();
+      await sql("update public.jump_encuesta_opciones set propuesta_por = $2 where id = $1", [e.o[2], X.E.id]);
+      const { id: otra } = await fila("insert into public.jump_encuestas (pregunta, estado) values ('¿Qué taller quieres para enero?', 'borrador') returning id");
+      await sql("insert into public.jump_encuesta_opciones (encuesta_id, texto, orden) values ($1, 'Costos', 1), ($1, 'Precios', 2)", [otra]);
+      await entrarEquipo();
+      await ir("a/encuestas");
+      await esperar(`!!document.querySelector('[data-enc-admin="${e.id}"]') && !!document.querySelector('[data-enc-admin="${otra}"]')`);
+      // La abierta va primero, con los votos por origen y quién propuso cada idea.
+      const t = await ev(`(() => { const c = document.querySelector('[data-enc-admin="${e.id}"]');
+        return { primera: document.querySelector("#page [data-enc-admin]") === c,
+          n: [...c.querySelectorAll(".enc-res")].map((r) => r.querySelector(".enc-res-n").textContent.trim()),
+          quien: c.querySelector('.enc-res[data-op-id="${e.o[2]}"] .enc-res-quien')?.textContent.trim() }; })()`);
+      if (!t.primera || JSON.stringify(t.n) !== JSON.stringify(["público 2 · inscritos 1", "público 1 · inscritos 0", "público 0 · inscritos 0"]) || t.quien !== "Propuesta por María José Vera")
+        return JSON.stringify(t);
+      await foto("a-encuestas-lista");
+      await clic(`[data-act="enc-abrir"][data-id="${otra}"]`);
+      const msg = await esperar(`document.querySelector("#dlgEnc[open] #dlgEncTexto")?.textContent.trim()`);
+      if (msg !== "Se cerrará “¿Qué taller quieres para diciembre?”.") return "aviso: " + msg;
+      await foto("a-encuesta-abrir-confirma");
+      await clic("#encConfirmForm [type=submit]");
+      await esperar(`document.querySelector('[data-enc-admin="${otra}"] .pill')?.textContent.trim() === "Abierta"`);
+      const est = (await sql("select id, estado from public.jump_encuestas")).rows;
+      const de = (id) => est.find((x) => x.id === id)?.estado;
+      return (de(e.id) === "cerrada" && de(otra) === "abierta") || JSON.stringify(est);
+    },
+    "panel-quitar-opcion-confirma": async () => {
+      const e = await sembrarEncuesta();
+      await entrarEquipo();
+      await ir("a/encuestas");
+      await esperar(`!!document.querySelector('[data-act="enc-editar"][data-id="${e.id}"]')`);
+      await clic(`[data-act="enc-editar"][data-id="${e.id}"]`);
+      await esperar(`document.querySelectorAll("#encForm .enc-ed-op").length === 3`);
+      // La primera tiene 3 votos: pide confirmación y, si se cancela, sigue ahí.
+      await clic('#encForm .enc-ed-op:nth-child(1) [data-act="enc-op-quitar"]');
+      const msg = await esperar(`document.querySelector("#dlgEnc[open] #dlgEncTexto")?.textContent.trim()`);
+      if (msg !== "Se perderán 3 votos.") return "aviso: " + msg;
+      await foto("a-encuesta-quitar-confirma");
+      await clic('#dlgEnc [data-act="cerrar"]');
+      await esperar(`!document.querySelector("#dlgEnc[open]")`);
+      if ((await ev(`document.querySelectorAll("#encForm .enc-ed-op").length`)) !== 3) return "se quitó al cancelar";
+      await clic('#encForm .enc-ed-op:nth-child(1) [data-act="enc-op-quitar"]');
+      await esperar(`!!document.querySelector("#dlgEnc[open]")`);
+      await clic("#encConfirmForm [type=submit]");
+      await esperar(`document.querySelectorAll("#encForm .enc-ed-op").length === 2`);
+      // Una opción nueva (sin votos) se quita sin preguntar.
+      await clic('[data-act="enc-op-agregar"]');
+      await clic('#encForm .enc-ed-op:nth-child(3) [data-act="enc-op-quitar"]');
+      if (await ev(`!!document.querySelector("#dlgEnc[open]") || document.querySelectorAll("#encForm .enc-ed-op").length !== 2`)) return "preguntó por una opción sin votos";
+      await clic('[data-act="enc-op-agregar"]');
+      await escribir("#encForm .enc-ed-op:nth-child(3) input", "Ventas en ferias");
+      await clic("#encForm [type=submit]");
+      await esperar(`!document.querySelector("#encForm") && !!document.querySelector('[data-enc-admin="${e.id}"] .enc-res')`);
+      const ops = async () => (await sql("select id, texto from public.jump_encuesta_opciones where encuesta_id = $1 order by orden", [e.id])).rows;
+      const votos = async () => (await fila("select count(*)::int n from public.jump_encuesta_votos where encuesta_id = $1", [e.id])).n;
+      let o = await ops();
+      if (JSON.stringify(o.map((x) => x.texto)) !== JSON.stringify(["Cómo sacar el RUC sin enredos", "Vender por WhatsApp Business", "Ventas en ferias"]) || (await votos()) !== 1)
+        return "después de guardar: " + JSON.stringify({ o, votos: await votos() });
+      // Borrar una idea desde los resultados también pide confirmación.
+      await clic(`[data-act="enc-op-borrar"][data-id="${o[0].id}"]`);
+      const m2 = await esperar(`document.querySelector("#dlgEnc[open] #dlgEncTexto")?.textContent.trim()`);
+      if (m2 !== "Se perderá 1 voto.") return "aviso al borrar idea: " + m2;
+      await clic("#encConfirmForm [type=submit]");
+      await esperar(`!document.querySelector('.enc-res[data-op-id="${o[0].id}"]')`);
+      o = await ops();
+      return (o.length === 2 && (await votos()) === 0) || JSON.stringify({ o, votos: await votos() });
+    },
+    "panel-guardar-conserva-ideas": async () => {
+      // Mientras el equipo corrige la pregunta, un inscrito propone una idea: al guardar, la idea y su voto siguen ahí.
+      const e = await sembrarEncuesta();
+      await entrarEquipo();
+      await ir("a/encuestas");
+      await esperar(`!!document.querySelector('[data-act="enc-editar"][data-id="${e.id}"]')`);
+      await clic(`[data-act="enc-editar"][data-id="${e.id}"]`);
+      await esperar(`document.querySelectorAll("#encForm .enc-ed-op").length === 3`);
+      const { id: idea } = await fila("insert into public.jump_encuesta_opciones (encuesta_id, texto, orden, propuesta_por) values ($1, 'Cómo vender por TikTok', 4, $2) returning id", [e.id, X.E2.id]);
+      await sql("insert into public.jump_encuesta_votos (encuesta_id, opcion_id, origen, user_id) values ($1, $2, 'inscrito', $3)", [e.id, idea, X.E2.id]);
+      await escribir("#encPregunta", "¿Qué taller quieres para enero?");
+      await clic("#encForm [type=submit]");
+      await esperar(`!document.querySelector("#encForm") && !!document.querySelector('[data-enc-admin="${e.id}"] .enc-res')`);
+      const f = await fila("select (select pregunta from public.jump_encuestas where id = $1) pregunta, (select count(*)::int from public.jump_encuesta_opciones where id = $2) idea, (select count(*)::int from public.jump_encuesta_votos where opcion_id = $2) votos", [e.id, idea]);
+      return (f.pregunta === "¿Qué taller quieres para enero?" && f.idea === 1 && f.votos === 1) || JSON.stringify(f);
+    },
+    "panel-intercambiar-textos": async () => {
+      // El equipo se equivocó de orden al escribir: cambia el texto de la primera por el de la segunda y al revés.
+      const e = await sembrarEncuesta();
+      await entrarEquipo();
+      await ir("a/encuestas");
+      await esperar(`!!document.querySelector('[data-act="enc-editar"][data-id="${e.id}"]')`);
+      await clic(`[data-act="enc-editar"][data-id="${e.id}"]`);
+      await esperar(`document.querySelectorAll("#encForm .enc-ed-op").length === 3`);
+      await escribir("#encForm .enc-ed-op:nth-child(1) input", "Cómo sacar el RUC sin enredos");
+      await escribir("#encForm .enc-ed-op:nth-child(2) input", "Fotos de producto con el celular");
+      await clic("#encForm [type=submit]");
+      await esperar(`!document.querySelector("#encForm") && !!document.querySelector('[data-enc-admin="${e.id}"] .enc-res')`);
+      const t = async (id) => (await fila("select texto from public.jump_encuesta_opciones where id = $1", [id])).texto;
+      const r = [await t(e.o[0]), await t(e.o[1])];
+      return JSON.stringify(r) === JSON.stringify(["Cómo sacar el RUC sin enredos", "Fotos de producto con el celular"]) || JSON.stringify(r);
+    },
+    // ---------- comunidad: JC ----------
+    "comunidad-jc-inicio-grande": async () => {
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector(".jc-escena:not(.entrando)")`);
+      await esperar(jcQuieto);
+      if ((await modoJC()) !== "grande") return "modo en el Inicio: " + (await modoJC());
+      // Se para a la derecha del saludo, con los pies en el borde de abajo de su sitio, sin tapar el saludo.
+      const m = await ev(`(() => { const r = (s) => document.querySelector(s).getBoundingClientRect();
+        const j = r(".jc-escena .jc"), s = r(".jc-sitio-com"), h = r("#page .page-head h1"), c = r(".jc-escena .jc-cuerpo");
+        return { piesOk: Math.abs(c.bottom - s.bottom) < 6, tapa: j.left < h.right && j.right > h.left && j.top < h.bottom && j.bottom > h.top, alto: Math.round(j.height) }; })()`);
+      if (!m.piesOk || m.tapa) return "posición: " + JSON.stringify(m);
+      await foto("e-jc-inicio");
+      // En el resto de pantallas del emprendedor, a la esquina.
+      await clic('a.nav-link[href="#e/mentorias"], .tabbar a[href="#e/mentorias"]');
+      await esperar(`location.hash === "#e/mentorias" && document.querySelector(".jc-escena")?.dataset.modo === "esquina"`);
+      return true;
+    },
+    "comunidad-jc-esquina": async () => {
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector(".jc-escena")`);
+      for (const h of ["e/clases", "e/muro", "e/avisos", "e/perfil"]) {
+        await ir(h);
+        await esperar(`location.hash === "#${h}" && !!document.querySelector("#page") && document.querySelector(".jc-escena")?.dataset.modo === "esquina"`);
+      }
+      const v = await ev(`(() => { const j = document.querySelector(".jc-escena .jc").getBoundingClientRect(); return { dentro: j.right <= innerWidth && j.bottom <= innerHeight, pegado: innerWidth - j.right < 40 }; })()`);
+      await foto("e-jc-esquina");
+      return (v.dentro && v.pegado) || "esquina: " + JSON.stringify(v);
+    },
+    "comunidad-jc-no-en-panel": async () => {
+      // Antes de entrar (pantalla de ingreso) no hay JC, y el equipo tampoco lo ve.
+      await abrir("ingreso");
+      await dormir(400);
+      if (await ev(`!!document.querySelector(".jc-escena")`)) return "JC en el ingreso";
+      await entrarEquipo();
+      await dormir(1000);
+      const oculto = await ev(`!document.querySelector(".jc-escena") || getComputedStyle(document.querySelector(".jc-escena")).display === "none"`);
+      return oculto || "JC en el panel del equipo";
+    },
+    "comunidad-jc-no-en-video": async () => {
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector(".jc-escena")`);
+      await ir("e/m/" + X.P);
+      await esperar(`location.hash === "#e/m/${X.P}" && !!document.querySelector("#page")`);
+      await dormir(500);
+      if (!(await ev(`getComputedStyle(document.querySelector(".jc-escena")).display === "none"`))) return "JC dentro de una mentoría";
+      // Al salir de ella, vuelve.
+      await ir("e/clases");
+      await esperar(`location.hash === "#e/clases" && getComputedStyle(document.querySelector(".jc-escena")).display !== "none"`);
+      return true;
+    },
+    "comunidad-jc-anuncia-clase": async () => {
+      await sql("delete from public.jump_clases");
+      await sql("insert into public.jump_clases (titulo, inicia_en, duracion_min) values ('Cómo poner precio a lo que vendes', now() + interval '3 days', 60)");
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector(".jc-escena:not(.entrando)")`);
+      await esperar(jcQuieto);
+      // Lo primero que dice es presentarse; al tocarlo, cuenta lo importante: la próxima clase con su día y hora.
+      await clic(".jc-toque");
+      const g = await esperar(`document.querySelector(".jc-globo.visible")?.textContent.includes("«Cómo poner precio a lo que vendes»") && document.querySelector(".jc-globo.visible").textContent`);
+      await foto("e-jc-clase");
+      return /próxima clase en vivo/.test(g) && /a las \d/.test(g) || "globo: " + g;
+    },
+    "comunidad-jc-esconder": async () => {
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector(".jc-escena:not(.entrando)")`);
+      await clic(".jc-esconder");
+      const e1 = await ev(`({ esc: document.querySelector(".jc-escena").classList.contains("escondido"), mem: localStorage.getItem("jc.escondido") })`);
+      if (!e1.esc || e1.mem !== "true") return "al esconderlo: " + JSON.stringify(e1);
+      // Al recargar sigue escondido y callado.
+      await send("Page.reload");
+      await esperar(`document.readyState === "complete" && location.hash === "#e/inicio" && !!document.querySelector(".jc-escena")`);
+      await dormir(1500);
+      const e2 = await ev(`({ esc: document.querySelector(".jc-escena").classList.contains("escondido"), volver: !document.querySelector(".jc-volver").hidden, globo: !!document.querySelector(".jc-globo.visible") })`);
+      if (!e2.esc || !e2.volver || e2.globo) return "al recargar: " + JSON.stringify(e2);
+      await clic(".jc-volver");
+      return (await ev(`localStorage.getItem("jc.escondido")`)) === "false" || "no se guardó que volvió";
+    },
+    "comunidad-jc-bajo-barra": async () => {
+      // En el celular, al bajar por el Inicio, JC grande pasa por detrás de la barra de arriba (no tapa Perfil ni Salir).
+      if (!movil) return true;
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector(".jc-escena:not(.entrando)")`);
+      await esperar(jcQuieto);
+      await ev(`(() => { const j = document.querySelector(".jc-escena .jc-cuerpo").getBoundingClientRect(); window.scrollBy(0, j.top + j.height / 2 - 28); return true; })()`);
+      await dormir(300);
+      const r = await ev(`(() => { const j = document.querySelector(".jc-escena .jc-cuerpo").getBoundingClientRect(), m = document.querySelector(".mtop").getBoundingClientRect();
+        const x0 = Math.max(j.left, m.left), x1 = Math.min(j.right, m.right), y0 = Math.max(j.top, m.top), y1 = Math.min(j.bottom, m.bottom);
+        if (x1 <= x0 || y1 <= y0) return "JC no pasa por la barra: " + JSON.stringify({ j, m });
+        const e = document.elementFromPoint((x0 + x1) / 2, (y0 + y1) / 2);
+        return (!!e?.closest(".mtop") && !e.closest(".jc-escena")) || "encima de la barra: " + (e?.className || e?.tagName); })()`);
+      return r;
+    },
+    "comunidad-aviso-no-tapa-jc": async () => {
+      // Un aviso largo abajo no le pasa por encima a JC en la esquina, ni al lugar al que camina (un cuerpo a su izquierda).
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector(".jc-escena")`);
+      await ir("e/clases");
+      await esperar(`location.hash === "#e/clases" && document.querySelector(".jc-escena")?.dataset.modo === "esquina" && !document.querySelector(".jc-escena.entrando")`);
+      await esperar(jcQuieto);
+      await ev(`import("/jump/comunidad/js/ui.js").then((m) => (m.toast("Tu foto se subió, pero tardó más de lo normal: si no la ves en el muro en unos minutos, vuelve a intentarlo desde otra red."), true))`);
+      await esperar(`!!document.querySelector("#toast.show")`);
+      await dormir(400);
+      const r = await ev(`(() => { const t = document.querySelector("#toast").getBoundingClientRect(), j = document.querySelector(".jc-escena .jc").getBoundingClientRect();
+        const zona = { left: j.left - j.width, right: j.right, top: j.top, bottom: j.bottom };
+        return { cruza: t.left < zona.right && t.right > zona.left && t.top < zona.bottom && t.bottom > zona.top, t: [t.left, t.right, t.top, t.bottom].map(Math.round), zona: [zona.left, zona.right, zona.top, zona.bottom].map(Math.round), dentro: t.left >= 0 && t.right <= innerWidth }; })()`);
+      await foto("e-aviso-y-jc");
+      return (!r.cruza && r.dentro) || JSON.stringify(r);
+    },
+    "jc-globo-tocar-cierra": async () => {
+      // Tocar el globo lo cierra (en el celular tapa buena parte de la pantalla).
+      await landing();
+      await esperar(`!!document.querySelector(".jc-escena:not(.entrando)")`);
+      if (movil) await ev(`document.querySelector(".jc-sitio").scrollIntoView({ block: "center", behavior: "instant" }), true`);
+      await esperar(`document.querySelector(".jc-globo.visible")?.textContent`, 9000);
+      await clic(".jc-globo.visible");
+      await dormir(500);
+      return !(await ev(`!!document.querySelector(".jc-globo.visible")`)) || "el globo siguió abierto";
+    },
+    desborde: async () => {
+      // Ni JC ni su globo ensanchan la página.
+      await landing();
+      await esperar(`!!document.querySelector(".jc-escena:not(.entrando)")`);
+      await dormir(400);
+      const d = await desborde();
+      return d <= 0 || "desborde: " + d;
+    },
+    // ---------- transversales ----------
+    "jc-no-tapa": async () => {
+      // JC nunca queda encima de lo que se toca: el botón de postular y las opciones de la encuesta.
+      await sembrarEncuesta();
+      await landing();
+      await esperar(`!!document.querySelector(".jc-escena:not(.entrando)")`);
+      for (const sel of ["#sendBtn", "#opts .opt"]) {
+        await ev(`document.querySelector(${JSON.stringify(sel)}).scrollIntoView({ block: "center" })`);
+        await dormir(1600);
+        const r = await ev(`(() => { const b = document.querySelector(${JSON.stringify(sel)}), r = b.getBoundingClientRect();
+          const puntos = [[.5, .5], [.1, .5], [.9, .5]].map(([x, y]) => document.elementFromPoint(r.left + r.width * x, r.top + r.height * y));
+          return puntos.every((e) => e && b.contains(e) && !e.closest(".jc-escena")); })()`);
+        if (!r) return "JC tapa " + sel;
+      }
+      return true;
+    },
+    "jc-reduced-motion": async () => {
+      // Con «reducir movimiento», JC cambia de lugar sin el salto: nada animado en él.
+      await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+      try {
+        await landing();
+        await esperar(`!!document.querySelector(".jc-escena:not(.entrando)")`);
+        await ev(`window.scrollTo(0, document.querySelector("#proceso").offsetTop)`);
+        await esperar(`document.querySelector(".jc-escena")?.dataset.modo === "esquina"`);
+        await dormir(600);
+        const n = await ev(`document.querySelector(".jc-escena .jc").getAnimations({ subtree: true }).filter((a) => a.effect?.getComputedTiming().iterations !== Infinity && a.playState === "running").length`);
+        return n === 0 || "animaciones corriendo: " + n;
+      } finally {
+        await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }] });
+      }
+    },
+    "desborde-comunidad": async () => {
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector(".jc-escena:not(.entrando)")`);
+      await dormir(800);
+      for (const h of ["e/inicio", "e/muro"]) {
+        await ir(h);
+        await esperar(`location.hash === "#${h}" && !!document.querySelector("#page")`);
+        await dormir(400);
+        const d = await desborde();
+        if (d > 0) return `desborde en ${h}: ${d}`;
+      }
+      return true;
+    },
+    "sin-0003": async () => {
+      // Sin la migración 0003 (tablas de encuestas ausentes) la landing y el Inicio cargan sin romperse y sin pedir
+      // tablas que no existen (ningún 404 en la consola).
+      await sql("drop table if exists public.jump_encuesta_votos, public.jump_encuesta_opciones, public.jump_encuestas cascade");
+      await landing();
+      const e = await ev(`document.querySelector("#poll").dataset.estado`);
+      if (e !== "vacia") return "la landing sin 0003: " + e;
+      await esperar(`!!document.querySelector(".jc-escena")`);
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector(".page-head h1")`);
+      return !(await ev(`!!document.querySelector("#page [data-encuesta]")`)) || "tarjeta sin 0003";
+    },
+    "panel-sin-0003": async () => {
+      // Sin la migración 0003 el panel no se rompe: explica qué falta (sin 404 en la consola).
+      await sql("drop table if exists public.jump_encuesta_votos, public.jump_encuesta_opciones, public.jump_encuestas cascade");
+      await entrarEquipo();
+      await ir("a/encuestas");
+      const t = await esperar(`document.querySelector("#page .empty")?.textContent`);
+      await foto("a-encuestas-sin-0003");
+      return t.includes("Falta aplicar la migración 0003 en Supabase para usar las encuestas.") || t;
+    },
+    csp: async () => {
+      const csp = consola.filter((c) => /Content Security Policy|Refused to/i.test(c));
+      return csp.length === 0 || csp.join(" | ");
+    },
+  },
 };
 
 // Preparación por grupo (una vez, antes de sus escenarios).
@@ -1333,6 +2001,10 @@ const PREPARAR = {
     // El límite diario de la landing responde 429 a propósito.
     erroresEsperados.push([/consalvalaw\.com/, /./], [/\/api\/jump-postular$/, /429/]);
   },
+  jc: async () => {
+    // Los logos de Consalva Law vienen de su sitio. El tope de votos por conexión responde 429 a propósito.
+    erroresEsperados.push([/consalvalaw\.com/, /./], [/\/api\/jump-publico$/, /429/]);
+  },
   emprendedor: async () => {
     const r = await apiAdmin("ejemplos-cargar");
     if (r.status !== 201 && r.status !== 200) throw new Error("no se cargaron los ejemplos: " + JSON.stringify(r));
@@ -1345,7 +2017,8 @@ const resultados = {};
 const lista = ESCENARIOS[grupo];
 if (lista && PREPARAR[grupo]) await PREPARAR[grupo]();
 if (!lista) { console.error(`Grupo desconocido: ${grupo}. Hay: ${Object.keys(ESCENARIOS).join(", ")}`); process.exitCode = 2; }
-for (const [nombre, fn] of Object.entries(lista || {})) {
+const solo = process.env.JUMP_UI_SOLO;
+for (const [nombre, fn] of Object.entries(lista || {}).filter(([n]) => !solo || n.includes(solo))) {
   try {
     const r = await Promise.race([fn(), dormir(30000).then(() => "tiempo agotado")]);
     resultados[nombre] = r === true ? "ok" : String(r);

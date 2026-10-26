@@ -90,14 +90,15 @@ async function votar(id) {
     if (r.ok && d.ok && d.encuesta) {
       mia = id;
       guardar(`jump.voto.${d.encuesta.id}`, id);
+      guardar("jump.votoEn", String(Date.now())); // al recargar enseguida, publico.js pide los resultados frescos
       encuesta = d.encuesta;
       msg.textContent = "¡Listo! Tu voto quedó guardado.";
       pintar();
       optsEl.querySelector(`.opt[data-id="${CSS.escape(id)}"]`)?.focus({ preventScroll: true });
     } else {
       msg.className = "poll-msg err";
-      msg.textContent = r.status === 429 ? "Ya llegaron muchos votos desde esta conexión. Intenta más tarde."
-        : d.error || "No se pudo guardar tu voto. Intenta de nuevo en unos minutos.";
+      // El tope por conexión, la encuesta que cerró o lo que falló: lo explica la API.
+      msg.textContent = d.error || "No se pudo guardar tu voto. Intenta de nuevo en unos minutos.";
     }
   } catch {
     msg.className = "poll-msg err";

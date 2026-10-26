@@ -100,6 +100,76 @@ test("proponer crea la opción, vota por ella y solo una vez", async () => {
   await assert.rejects(como(db, X.A, "select jump_proponer($1, $2)", [enc, " x "]), /check constraint/); // muy corta
 });
 
+test("una idea por persona y encuesta, aunque proponga desde dos pestañas a la vez", async () => {
+  await una(X.E, "select jump_proponer($1, $2) id", [enc, "Contabilidad básica"]);
+  // Dos pestañas pasan la revisión antes de que la otra guarde: la base deja entrar solo una idea de esa persona.
+  await assert.rejects(como(db, "service", "insert into jump_encuesta_opciones (encuesta_id, texto, propuesta_por) values ($1, 'Segunda idea de E', $2)",
+    [enc, X.E.id]), /jump_encuesta_opciones_una_por_persona/);
+  // En otra encuesta, y otra persona en esta, sí.
+  await como(db, "service", "update jump_encuestas set estado = 'cerrada' where id = $1", [enc]);
+  const otra = await nueva("¿Qué curso quieres en febrero?", "abierta");
+  await una(X.E, "select jump_proponer($1, $2) id", [otra, "Contabilidad básica"]);
+  await una(X.E2, "select jump_proponer($1, $2) id", [otra, "Atención al cliente"]);
+});
+
+test("las huellas del voto público se borran 30 días después de cerrar la encuesta; el voto sigue contando", async () => {
+  for (const quien of ["anon", X.E, X.A]) await assert.rejects(como(db, quien, "select jump_olvidar_huellas()"), /permission denied/);
+  await assert.rejects(una("service", "select jump_voto_publico($1, null, 'ip-h', 30) r", [o1]), /sin_huella/);
+  const votar = async (disp, op = o1) => (await una("service", "select jump_voto_publico($1, $2, 'ip-h', 30) r", [op, disp])).r;
+  const huellas = async (e) => (await una("service", "select count(*)::int n from jump_encuesta_votos where encuesta_id = $1 and (ip_hash is not null or dispositivo_hash is not null)", [e])).n;
+  assert.equal(await votar("disp-h1"), "ok");
+  assert.equal(await votar("disp-h2", o2), "ok");
+  await como(db, "service", "update jump_encuestas set estado = 'cerrada' where id = $1", [enc]);
+  await como(db, "service", "select jump_olvidar_huellas()");
+  assert.equal(await huellas(enc), 2, "recién cerrada se guardan: si el equipo la vuelve a abrir, cada aparato sigue con un voto");
+  await como(db, "service", "update jump_encuestas set cerrada_en = now() - interval '31 days' where id = $1", [enc]);
+  await como(db, "service", "select jump_olvidar_huellas()");
+  assert.equal(await huellas(enc), 0);
+  const r = await filas(X.E, "select opcion_id, porcentaje from jump_encuesta_resultados($1)", [enc]);
+  assert.deepEqual(Object.fromEntries(r.map((x) => [x.opcion_id, x.porcentaje])), { [o1]: 50, [o2]: 50 }, "los votos siguen contando");
+  // Un voto en la encuesta abierta también limpia lo viejo.
+  const vieja = await nueva("Encuesta de hace meses", "cerrada");
+  const ov = await opcion(vieja, "Opción vieja");
+  await como(db, "service", "insert into jump_encuesta_votos (encuesta_id, opcion_id, origen, dispositivo_hash, ip_hash) values ($1, $2, 'publico', 'disp-v', 'ip-v')", [vieja, ov]);
+  await como(db, "service", "update jump_encuestas set cerrada_en = now() - interval '40 days' where id = $1", [vieja]);
+  await como(db, "service", "update jump_encuestas set estado = 'abierta' where id = $1", [enc]);
+  assert.equal(await votar("disp-h3"), "ok");
+  assert.equal(await huellas(vieja), 0);
+});
+
+test("el equipo guarda la encuesta en un paso: puede intercambiar dos textos y, si algo falla, no cambia nada", async () => {
+  const guardar = async (quien, id, pregunta, ops, quitar = []) =>
+    (await una(quien, "select jump_guardar_encuesta($1, $2, $3::jsonb, $4::uuid[]) id", [id, pregunta, JSON.stringify(ops), quitar])).id;
+  const opciones = async (e) => (await filas("service", "select id, texto, orden from jump_encuesta_opciones where encuesta_id = $1 order by orden, creada_en", [e]));
+  for (const quien of ["anon", X.E]) await assert.rejects(guardar(quien, enc, "Cambiada sin permiso", [{ id: o1, texto: "Otra" }]), /permission denied|sin_acceso/);
+  await como(db, X.E, "select jump_votar($1)", [o1]);
+  const { id: idea } = await una(X.E2, "select jump_proponer($1, $2) id", [enc, "Atención al cliente"]);
+  // o1 y o2 se cambian el texto (cada voto sigue en su opción) y se agrega una nueva; la idea de E2 no se toca.
+  assert.equal(await guardar(X.A, enc, "¿Qué curso quieres en enero?", [{ id: o1, texto: "Fotos para redes" }, { id: o2, texto: "Feria de Navidad" }, { texto: "Ventas por WhatsApp" }]), enc);
+  let o = await opciones(enc);
+  assert.deepEqual(o.map((x) => [x.id === o1 ? "o1" : x.id === o2 ? "o2" : x.id === idea ? "idea" : "nueva", x.texto, x.orden]),
+    [["o1", "Fotos para redes", 1], ["o2", "Feria de Navidad", 2], ["idea", "Atención al cliente", 3], ["nueva", "Ventas por WhatsApp", 3]]);
+  const nuevaId = o.find((x) => x.texto === "Ventas por WhatsApp").id;
+  assert.equal((await una("service", "select pregunta from jump_encuestas where id = $1", [enc])).pregunta, "¿Qué curso quieres en enero?");
+  assert.equal((await una("service", "select opcion_id from jump_encuesta_votos where user_id = $1 and encuesta_id = $2", [X.E.id, enc])).opcion_id, o1);
+  // Dos textos iguales: no se guarda nada (ni la pregunta, ni lo que se quitaba).
+  await assert.rejects(guardar(X.A, enc, "Pregunta que no debe quedar", [{ id: o1, texto: "Lo mismo" }, { id: o2, texto: "LO MISMO" }, { texto: "Otra más" }], [idea]),
+    (e) => e.code === "23505");
+  assert.deepEqual(await opciones(enc), o);
+  assert.equal((await una("service", "select pregunta from jump_encuestas where id = $1", [enc])).pregunta, "¿Qué curso quieres en enero?");
+  // Quitar borra solo las de esa encuesta, con sus votos.
+  const ajena = await opcion(await nueva("Encuesta ajena"), "Opción ajena");
+  await guardar(X.A, enc, "¿Qué curso quieres en enero?", [{ id: o2, texto: "Feria de Navidad" }], [o1, nuevaId, ajena]);
+  o = await opciones(enc);
+  assert.deepEqual(o.map((x) => x.texto), ["Feria de Navidad", "Atención al cliente"]);
+  assert.equal((await filas("service", "select 1 from jump_encuesta_votos where opcion_id = $1", [o1])).length, 0);
+  assert.equal((await filas("service", "select 1 from jump_encuesta_opciones where id = $1", [ajena])).length, 1, "la de otra encuesta sigue");
+  // Sin id crea un borrador con sus opciones en orden.
+  const n = await guardar(X.A, null, "¿Qué taller quieres en marzo?", [{ texto: "Costos" }, { texto: "Precios" }]);
+  assert.equal((await una("service", "select estado from jump_encuestas where id = $1", [n])).estado, "borrador");
+  assert.deepEqual((await opciones(n)).map((x) => [x.texto, x.orden]), [["Costos", 1], ["Precios", 2]]);
+});
+
 test("quién propuso cada idea lo ve solo el equipo; cada inscrito sabe cuál es la suya", async () => {
   const { id } = await una(X.E, "select jump_proponer($1, $2) id", [enc, "Contabilidad básica"]);
   // Con el directorio de la comunidad, propuesta_por diría quién la propuso (y por qué votó al proponerla).

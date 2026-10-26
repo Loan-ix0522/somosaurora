@@ -48,12 +48,21 @@ async function armar(e) {
   return { id: e.id, pregunta: e.pregunta, estado: e.estado, opciones: opciones.map((o) => ({ id: o.id, texto: o.texto, porcentaje: pct.get(o.id) ?? 0 })) };
 }
 
-// La abierta; si no hay, la última cerrada; si no, null. Nunca las de ejemplo.
+// La abierta; si no hay, la última cerrada; si no, null. Nunca las de ejemplo. Sin la 0003 (no hay tabla), undefined.
 export async function encuestaPublica() {
   const campos = "select=id,pregunta,estado";
-  let [e] = await leer(`jump_encuestas?estado=eq.abierta&es_ejemplo=eq.false&${campos}&limit=1`) || [];
+  const abiertas = await leer(`jump_encuestas?estado=eq.abierta&es_ejemplo=eq.false&${campos}&limit=1`);
+  if (!abiertas) return undefined;
+  let [e] = abiertas;
   if (!e) [e] = await leer(`jump_encuestas?estado=eq.cerrada&es_ejemplo=eq.false&${campos}&order=cerrada_en.desc.nullslast,creada_en.desc&limit=1`) || [];
   return e ? armar(e) : null;
+}
+
+// Las huellas del voto público se borran 30 días después de cerrar la encuesta (lo decide la base). Se pide en cada
+// lectura; si falla (o falta la 0003), la página sigue igual.
+export async function olvidarHuellas() {
+  const r = await rest("rpc/jump_olvidar_huellas", { method: "POST", body: {} }).catch(() => null);
+  return !!r?.ok;
 }
 
 // La conexión que cuenta para el tope. En IPv6 a cada casa le dan una red /64 entera y el aparato cambia de dirección

@@ -14,7 +14,7 @@ const sql = (q, p) => sim.db.query(q, p);
 const uno = async (q, p) => (await sql(q, p)).rows[0];
 async function leer(s = sim) {
   const r = await fetch(s.url + "/api/jump-publico");
-  return { status: r.status, cache: r.headers.get("cache-control"), ...(await r.json()) };
+  return { status: r.status, cache: r.headers.get("cache-control"), cdn: r.headers.get("vercel-cdn-cache-control"), ...(await r.json()) };
 }
 async function votar(cuerpo, { origin, ip = "203.0.113.7", metodo = "POST" } = {}) {
   const headers = { "Content-Type": "application/json", "X-Forwarded-For": ip };
@@ -38,7 +38,9 @@ test("GET da la próxima clase sin datos privados y sin ejemplos ni borradores",
   await sql("update jump_clases set mensaje = 'Traigan su cédula', grabacion_url = 'https://youtu.be/x' where id = $1", [X.C1]);
   let r = await leer();
   assert.equal(r.status, 200);
-  assert.equal(r.cache, "public, max-age=30");
+  // La guarda la red de Vercel, no el navegador: al recargar después de votar no se ve una copia vieja.
+  assert.equal(r.cache, "no-cache");
+  assert.equal(r.cdn, "max-age=30, stale-while-revalidate=60");
   assert.deepEqual(Object.keys(r.clase).sort(), ["duracionMin", "iniciaEn", "titulo"]);
   assert.equal(r.clase.titulo, "Dudas del RUC");
   assert.equal(r.clase.duracionMin, 60);
@@ -58,6 +60,7 @@ test("GET muestra una clase que ya empezó mientras sigue en vivo, y no una term
 
 test("GET sin encuesta abierta muestra la última cerrada; sin ninguna, null", async () => {
   assert.equal((await leer()).encuesta, null);
+  assert.equal((await leer()).hayEncuestas, true, "con la 0003 aplicada, aunque no haya encuestas");
   await encuesta("¿Qué taller hicimos primero?", "cerrada", { cerradaHace: 30 });
   const reciente = await encuesta("¿Qué taller quieres en noviembre?", "cerrada", { cerradaHace: 2 });
   await encuesta("Borrador que nadie ve", "borrador");
@@ -153,6 +156,19 @@ test("tope por conexión en IPv6: las direcciones de una misma red /64 cuentan c
   assert.equal((await votar({ opcion: e.o1, dispositivo: disp(501) }, { ip: "2001:db8:a:c::1" })).status, 200, "otra red /64 sí");
 });
 
+test("GET borra las huellas de las encuestas cerradas hace más de 30 días", async () => {
+  const vieja = await encuesta("¿Qué taller hicimos en agosto?", "cerrada");
+  const reciente = await encuesta("¿Qué taller hicimos en octubre?", "cerrada");
+  for (const e of [vieja, reciente])
+    await sql("insert into jump_encuesta_votos (encuesta_id, opcion_id, origen, dispositivo_hash, ip_hash) values ($1, $2, 'publico', $3, 'ip-x')", [e.id, e.o1, "disp-" + e.id]);
+  await sql("update jump_encuestas set cerrada_en = now() - interval '31 days' where id = $1", [vieja.id]);
+  assert.equal((await leer()).status, 200);
+  const h = async (e) => (await uno("select count(*)::int n from jump_encuesta_votos where encuesta_id = $1 and (ip_hash is not null or dispositivo_hash is not null)", [e.id])).n;
+  assert.equal(await h(vieja), 0);
+  assert.equal(await h(reciente), 1);
+  assert.equal((await uno("select count(*)::int n from jump_encuesta_votos where encuesta_id = $1", [vieja.id])).n, 1, "el voto sigue");
+});
+
 test("sin la tabla de encuestas (falta la 0003) GET responde 200 con encuesta null", async () => {
   const s = await iniciarSim({ db: await crearBase({ hasta: "0002" }) });
   try {
@@ -160,6 +176,7 @@ test("sin la tabla de encuestas (falta la 0003) GET responde 200 con encuesta nu
     assert.equal(r.status, 200);
     assert.equal(r.encuesta, null);
     assert.equal(r.clase, null);
+    assert.equal(r.hayEncuestas, false, "la comunidad lo usa para no pedir tablas que no existen");
     const v = await fetch(s.url + "/api/jump-publico", { method: "POST", headers: { "Content-Type": "application/json", Origin: s.url },
       body: JSON.stringify({ opcion: "11111111-1111-4111-8111-111111111111", dispositivo: disp(1) }) });
     assert.equal(v.status, 409);

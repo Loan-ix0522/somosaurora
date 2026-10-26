@@ -610,6 +610,16 @@ dialog[open]{animation:dlg .22s var(--ease-out)}
   .jc-sitio-com{width:53px;height:110px}
   .jc-escena[data-modo="grande"] .jc{--alto-jc:110px}
 }
+/* Con JC en la esquina, un aviso largo no le pasa por encima ni al lugar al que camina (hasta un cuerpo a su
+   izquierda): en la computadora se angosta; en el celular se corre a la izquierda. */
+body:has(.jc-escena[data-modo="esquina"]:not(.escondido):not(.fuera)) .toast{max-width:calc(100vw - 280px)}
+@media (max-width:900px){
+  body:has(.jc-escena[data-modo="esquina"]:not(.escondido):not(.fuera)) .toast{left:16px;right:140px;width:auto;max-width:none;transform:translateY(16px)}
+  body:has(.jc-escena[data-modo="esquina"]:not(.escondido):not(.fuera)) .toast.show{transform:none}
+}
+@media (max-width:560px){
+  body:has(.jc-escena[data-modo="esquina"]:not(.escondido):not(.fuera)) .toast{right:104px}
+}
 
 /* ---------- celular ---------- */
 .tabbar{display:none}

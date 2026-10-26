@@ -14,8 +14,9 @@
 --     funciones (jump_votar, jump_proponer); desde el navegador nadie escribe votos directo.
 --   · En la página pública, el voto lo recibe /api/jump-publico (service_role), que lo guarda con jump_voto_publico
 --     (el tope por conexión se revisa y se guarda en un solo paso). Las huellas del dispositivo y de la conexión
---     solo las lee esa API.
+--     solo las lee esa API, y se borran 30 días después de cerrar la encuesta (jump_olvidar_huellas).
 --   · Afuera solo se muestran porcentajes; los conteos por origen y quién propuso cada idea los ve solo el equipo.
+--   · El panel guarda cada encuesta en un solo paso (jump_guardar_encuesta): o queda todo o no cambia nada.
 -- ============================================================
 
 create table if not exists public.jump_encuestas (
@@ -46,6 +47,9 @@ create table if not exists public.jump_encuesta_opciones (
 );
 -- La misma idea no entra dos veces en una encuesta (sin importar mayúsculas ni espacios de los extremos).
 create unique index if not exists jump_encuesta_opciones_texto_idx on public.jump_encuesta_opciones (encuesta_id, lower(btrim(texto)));
+-- Una idea por persona y encuesta (también si propone desde dos pestañas a la vez).
+create unique index if not exists jump_encuesta_opciones_una_por_persona on public.jump_encuesta_opciones (encuesta_id, propuesta_por)
+  where propuesta_por is not null;
 
 create table if not exists public.jump_encuesta_votos (
   id               uuid primary key default gen_random_uuid(),
@@ -62,7 +66,8 @@ create table if not exists public.jump_encuesta_votos (
     references public.jump_encuesta_opciones (id, encuesta_id) on delete cascade,
   constraint jump_encuesta_votos_origen_chk check (origen in ('inscrito', 'publico')),
   constraint jump_encuesta_votos_quien_chk  check ((origen = 'inscrito') = (user_id is not null)),
-  constraint jump_encuesta_votos_publico_chk check (origen = 'inscrito' or dispositivo_hash is not null),
+  -- Solo el voto público lleva huellas (jump_voto_publico las exige); se borran al tiempo, el voto queda.
+  constraint jump_encuesta_votos_huellas_chk check (origen = 'publico' or (dispositivo_hash is null and ip_hash is null)),
   constraint jump_encuesta_votos_usuario_key unique (encuesta_id, user_id),
   constraint jump_encuesta_votos_dispositivo_key unique (encuesta_id, dispositivo_hash)
 );
@@ -121,6 +126,7 @@ returns uuid language plpgsql volatile security definer set search_path = public
 declare
   v_estado text;
   v_id     uuid;
+  v_indice text;
   v_texto  text := regexp_replace(btrim(coalesce(p_texto, '')), '\s+', ' ', 'g');
 begin
   if not public.jump_es_miembro() then
@@ -133,6 +139,8 @@ begin
   if v_estado <> 'abierta' then
     raise exception 'jump_encuesta_cerrada';
   end if;
+  -- Dos pestañas que proponen a la vez van una detrás de otra: la segunda ya ve la idea de la primera.
+  perform pg_advisory_xact_lock(hashtextextended('jump_proponer|' || p_encuesta::text || '|' || auth.uid()::text, 0));
   if exists (select 1 from public.jump_encuesta_opciones where encuesta_id = p_encuesta and propuesta_por = auth.uid()) then
     raise exception 'jump_ya_propuso';
   end if;
@@ -143,6 +151,10 @@ begin
             auth.uid())
     returning id into v_id;
   exception when unique_violation then
+    get stacked diagnostics v_indice = constraint_name;
+    if v_indice = 'jump_encuesta_opciones_una_por_persona' then
+      raise exception 'jump_ya_propuso';
+    end if;
     raise exception 'jump_idea_repetida' using errcode = '23505';
   end;
   insert into public.jump_encuesta_votos (encuesta_id, opcion_id, origen, user_id)
@@ -198,6 +210,17 @@ begin
 end;
 $$;
 
+-- Las huellas del voto público (aparato y conexión) solo sirven mientras se puede votar. Se borran 30 días después de
+-- cerrar la encuesta (hasta entonces el equipo puede volver a abrirla sin que nadie vote dos veces); el voto sigue
+-- contando. La llaman jump_voto_publico y /api/jump-publico cada vez que lee.
+create or replace function public.jump_olvidar_huellas()
+returns void language sql volatile security definer set search_path = public as $$
+  update public.jump_encuesta_votos v set dispositivo_hash = null, ip_hash = null
+    from public.jump_encuestas e
+   where e.id = v.encuesta_id and e.estado = 'cerrada' and e.cerrada_en < now() - interval '30 days'
+     and (v.dispositivo_hash is not null or v.ip_hash is not null);
+$$;
+
 -- El voto de la página pública. Lo llama solo /api/jump-publico (service_role) con las huellas ya calculadas.
 -- El tope por conexión se revisa y el voto se guarda en un solo paso, con un candado por encuesta y conexión: muchos
 -- votos a la vez desde la misma red no lo pasan. Quien ya votó desde ese aparato puede cambiar su voto.
@@ -207,6 +230,10 @@ returns text language plpgsql volatile security definer set search_path = public
 declare
   v_encuesta uuid;
 begin
+  if coalesce(p_dispositivo, '') = '' or coalesce(p_ip, '') = '' then
+    raise exception 'sin_huella';
+  end if;
+  perform public.jump_olvidar_huellas();
   select o.encuesta_id into v_encuesta
     from public.jump_encuesta_opciones o join public.jump_encuestas e on e.id = o.encuesta_id
    where o.id = p_opcion and e.estado = 'abierta' and not e.es_ejemplo;
@@ -240,19 +267,58 @@ begin
 end;
 $$;
 
+-- El panel guarda la encuesta en un solo paso: la pregunta y las opciones en el orden de la lista. Corrige las que
+-- siguen, agrega las nuevas (sin id) y borra solo las que el equipo quitó (p_quitar, con sus votos); las ideas que los
+-- inscritos propusieron mientras se editaba no se tocan. Sin p_id crea un borrador. Si algo falla (dos opciones con el
+-- mismo texto) no queda nada a medias. Corre con los permisos de quien llama (security invoker) y solo para el equipo.
+create or replace function public.jump_guardar_encuesta(p_id uuid, p_pregunta text, p_opciones jsonb, p_quitar uuid[] default '{}')
+returns uuid language plpgsql volatile security invoker set search_path = public as $$
+declare
+  v_id uuid := p_id;
+begin
+  if not public.jump_es_admin() then
+    raise exception 'sin_acceso' using errcode = '42501';
+  end if;
+  if v_id is null then
+    insert into public.jump_encuestas (pregunta) values (p_pregunta) returning id into v_id;
+  else
+    update public.jump_encuestas set pregunta = p_pregunta where id = v_id;
+    if not found then
+      raise exception 'no_encontrada';
+    end if;
+  end if;
+  delete from public.jump_encuesta_opciones where encuesta_id = v_id and id = any(coalesce(p_quitar, '{}'));
+  -- Las que cambian de texto primero sueltan el suyo: así dos opciones pueden intercambiarse el texto sin chocar con
+  -- el índice que no deja repetir.
+  update public.jump_encuesta_opciones o set texto = '~' || o.id::text
+    from jsonb_array_elements(coalesce(p_opciones, '[]')) x(v)
+   where o.encuesta_id = v_id and o.id = (x.v->>'id')::uuid and o.texto is distinct from x.v->>'texto';
+  update public.jump_encuesta_opciones o set texto = x.v->>'texto', orden = x.n
+    from jsonb_array_elements(coalesce(p_opciones, '[]')) with ordinality x(v, n)
+   where o.encuesta_id = v_id and o.id = (x.v->>'id')::uuid;
+  insert into public.jump_encuesta_opciones (encuesta_id, texto, orden)
+  select v_id, x.v->>'texto', x.n
+    from jsonb_array_elements(coalesce(p_opciones, '[]')) with ordinality x(v, n)
+   where x.v->>'id' is null;
+  return v_id;
+end;
+$$;
+
 do $$
 declare f text;
 begin
   foreach f in array array[
     'public.jump_votar(uuid)', 'public.jump_proponer(uuid, text)', 'public.jump_encuesta_resultados(uuid)',
-    'public.jump_encuesta_conteos(uuid)', 'public.jump_abrir_encuesta(uuid)'
+    'public.jump_encuesta_conteos(uuid)', 'public.jump_abrir_encuesta(uuid)', 'public.jump_guardar_encuesta(uuid, text, jsonb, uuid[])'
   ] loop
     execute format('revoke all on function %s from public, anon', f);
     execute format('grant execute on function %s to authenticated, service_role', f);
   end loop;
   execute 'revoke all on function public.jump_encuesta_estado() from public, anon, authenticated';
-  execute 'revoke all on function public.jump_voto_publico(uuid, text, text, int) from public, anon, authenticated';
-  execute 'grant execute on function public.jump_voto_publico(uuid, text, text, int) to service_role';
+  foreach f in array array['public.jump_voto_publico(uuid, text, text, int)', 'public.jump_olvidar_huellas()'] loop
+    execute format('revoke all on function %s from public, anon, authenticated', f);
+    execute format('grant execute on function %s to service_role', f);
+  end loop;
 end $$;
 
 -- ============================================================

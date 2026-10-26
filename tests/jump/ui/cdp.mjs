@@ -47,9 +47,12 @@ const pendientes = new Map();
 const consola = [];
 // Respuestas de error que un escenario provoca a propósito (p. ej. el 400 del límite diario del muro): no cuentan como falla.
 let erroresEsperados = [];
+// Las direcciones que pidió la página (para ver qué se puede guardar en caché).
+const pedidos = [];
 ws.addEventListener("message", (e) => {
   const m = JSON.parse(e.data);
   if (m.id && pendientes.has(m.id)) { pendientes.get(m.id)(m); pendientes.delete(m.id); }
+  if (m.method === "Network.requestWillBeSent") pedidos.push(m.params.request.url);
   if (m.method === "Runtime.exceptionThrown") consola.push("EXC " + (m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text));
   if (m.method === "Runtime.consoleAPICalled" && m.params.type === "error") consola.push("CON " + m.params.args.map((a) => a.value ?? a.description).join(" "));
   if (m.method === "Log.entryAdded" && m.params.entry.level === "error") {
@@ -1368,7 +1371,11 @@ const ESCENARIOS = {
     // ---------- landing: encuesta real ----------
     "landing-encuesta-real": async () => {
       const e = await sembrarEncuesta();
+      pedidos.length = 0;
       await landing("encuestas");
+      // Quien no ha votado pide la dirección de siempre: la que la red de Vercel tiene guardada.
+      const lecturas = pedidos.filter((u) => u.includes("/api/jump-publico"));
+      if (lecturas.length !== 1 || !lecturas[0].endsWith("/api/jump-publico")) return "lecturas: " + JSON.stringify(lecturas);
       const estado = await ev(`document.querySelector("#poll").dataset.estado`);
       const q = await texto("#pollQ");
       if (estado !== "abierta" || q !== "¿Qué taller quieres para diciembre?") return JSON.stringify({ estado, q });
@@ -1396,7 +1403,11 @@ const ESCENARIOS = {
       if (guardado.voto !== e.o[1] || !/^[A-Za-z0-9_-]{16,64}$/.test(guardado.aparato || "")) return "guardado: " + JSON.stringify(guardado);
       await foto("landing-voto");
       // Al volver, la página recuerda el voto y lo muestra contado (sin caché vieja); cambiarlo no suma otro.
+      pedidos.length = 0;
       await landing("encuestas", { limpiar: false });
+      // Recién votó: pide una dirección que la caché de Vercel no tiene, para ver su voto contado.
+      const lecturas = pedidos.filter((u) => u.includes("/api/jump-publico"));
+      if (lecturas.length !== 1 || !/\/api\/jump-publico\?v=\d+$/.test(lecturas[0])) return "lectura al volver: " + JSON.stringify(lecturas);
       if ((await ev(`document.querySelector("#opts .opt.mine")?.dataset.id`)) !== e.o[1]) return "no recordó el voto";
       if (JSON.stringify((await barras()).map((x) => x.pct)) !== JSON.stringify(["60 %", "40 %", "0 %"])) return "al recargar: " + JSON.stringify(await barras());
       await clic(`#opts .opt[data-id="${e.o[2]}"]`);
@@ -1416,7 +1427,8 @@ const ESCENARIOS = {
       await clic(`#opts .opt[data-id="${e.o[1]}"]`);
       const m = await esperar(`document.querySelector("#pollMsg.err")?.textContent`);
       const estado = await ev(`({ mia: !!document.querySelector("#opts .opt.mine"), off: [...document.querySelectorAll("#opts .opt")].some((b) => b.disabled), guardado: localStorage.getItem("jump.voto.${e.id}") })`);
-      return (m === "Ya llegaron muchos votos desde esta conexión. Intenta más tarde." && !estado.mia && !estado.off && !estado.guardado) || JSON.stringify({ m, estado });
+      // El tope dura toda la encuesta: «más tarde» no sirve; desde otra red, sí.
+      return (m === "Ya votaron muchas personas desde esta conexión. Intenta desde otra red." && !estado.mia && !estado.off && !estado.guardado) || JSON.stringify({ m, estado });
     },
     "landing-ver-todas": async () => {
       // Con más de 8 opciones se ven las 8 más votadas y un botón «Ver todas».
@@ -1764,6 +1776,22 @@ const ESCENARIOS = {
       const f = await fila("select (select pregunta from public.jump_encuestas where id = $1) pregunta, (select count(*)::int from public.jump_encuesta_opciones where id = $2) idea, (select count(*)::int from public.jump_encuesta_votos where opcion_id = $2) votos", [e.id, idea]);
       return (f.pregunta === "¿Qué taller quieres para enero?" && f.idea === 1 && f.votos === 1) || JSON.stringify(f);
     },
+    "panel-intercambiar-textos": async () => {
+      // El equipo se equivocó de orden al escribir: cambia el texto de la primera por el de la segunda y al revés.
+      const e = await sembrarEncuesta();
+      await entrarEquipo();
+      await ir("a/encuestas");
+      await esperar(`!!document.querySelector('[data-act="enc-editar"][data-id="${e.id}"]')`);
+      await clic(`[data-act="enc-editar"][data-id="${e.id}"]`);
+      await esperar(`document.querySelectorAll("#encForm .enc-ed-op").length === 3`);
+      await escribir("#encForm .enc-ed-op:nth-child(1) input", "Cómo sacar el RUC sin enredos");
+      await escribir("#encForm .enc-ed-op:nth-child(2) input", "Fotos de producto con el celular");
+      await clic("#encForm [type=submit]");
+      await esperar(`!document.querySelector("#encForm") && !!document.querySelector('[data-enc-admin="${e.id}"] .enc-res')`);
+      const t = async (id) => (await fila("select texto from public.jump_encuesta_opciones where id = $1", [id])).texto;
+      const r = [await t(e.o[0]), await t(e.o[1])];
+      return JSON.stringify(r) === JSON.stringify(["Cómo sacar el RUC sin enredos", "Fotos de producto con el celular"]) || JSON.stringify(r);
+    },
     // ---------- comunidad: JC ----------
     "comunidad-jc-inicio-grande": async () => {
       await entrar(X.E);
@@ -1856,6 +1884,32 @@ const ESCENARIOS = {
         return (!!e?.closest(".mtop") && !e.closest(".jc-escena")) || "encima de la barra: " + (e?.className || e?.tagName); })()`);
       return r;
     },
+    "comunidad-aviso-no-tapa-jc": async () => {
+      // Un aviso largo abajo no le pasa por encima a JC en la esquina, ni al lugar al que camina (un cuerpo a su izquierda).
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector(".jc-escena")`);
+      await ir("e/clases");
+      await esperar(`location.hash === "#e/clases" && document.querySelector(".jc-escena")?.dataset.modo === "esquina" && !document.querySelector(".jc-escena.entrando")`);
+      await esperar(jcQuieto);
+      await ev(`import("/jump/comunidad/js/ui.js").then((m) => (m.toast("Tu foto se subió, pero tardó más de lo normal: si no la ves en el muro en unos minutos, vuelve a intentarlo desde otra red."), true))`);
+      await esperar(`!!document.querySelector("#toast.show")`);
+      await dormir(400);
+      const r = await ev(`(() => { const t = document.querySelector("#toast").getBoundingClientRect(), j = document.querySelector(".jc-escena .jc").getBoundingClientRect();
+        const zona = { left: j.left - j.width, right: j.right, top: j.top, bottom: j.bottom };
+        return { cruza: t.left < zona.right && t.right > zona.left && t.top < zona.bottom && t.bottom > zona.top, t: [t.left, t.right, t.top, t.bottom].map(Math.round), zona: [zona.left, zona.right, zona.top, zona.bottom].map(Math.round), dentro: t.left >= 0 && t.right <= innerWidth }; })()`);
+      await foto("e-aviso-y-jc");
+      return (!r.cruza && r.dentro) || JSON.stringify(r);
+    },
+    "jc-globo-tocar-cierra": async () => {
+      // Tocar el globo lo cierra (en el celular tapa buena parte de la pantalla).
+      await landing();
+      await esperar(`!!document.querySelector(".jc-escena:not(.entrando)")`);
+      if (movil) await ev(`document.querySelector(".jc-sitio").scrollIntoView({ block: "center", behavior: "instant" }), true`);
+      await esperar(`document.querySelector(".jc-globo.visible")?.textContent`, 9000);
+      await clic(".jc-globo.visible");
+      await dormir(500);
+      return !(await ev(`!!document.querySelector(".jc-globo.visible")`)) || "el globo siguió abierto";
+    },
     desborde: async () => {
       // Ni JC ni su globo ensanchan la página.
       await landing();
@@ -1909,8 +1963,8 @@ const ESCENARIOS = {
       return true;
     },
     "sin-0003": async () => {
-      // Sin la migración 0003 (tablas de encuestas ausentes) la landing y el Inicio cargan sin romperse.
-      erroresEsperados.push([/jump-publico|jump_encuesta/, /status of (404|409|500|503)/]);
+      // Sin la migración 0003 (tablas de encuestas ausentes) la landing y el Inicio cargan sin romperse y sin pedir
+      // tablas que no existen (ningún 404 en la consola).
       await sql("drop table if exists public.jump_encuesta_votos, public.jump_encuesta_opciones, public.jump_encuestas cascade");
       await landing();
       const e = await ev(`document.querySelector("#poll").dataset.estado`);
@@ -1921,8 +1975,7 @@ const ESCENARIOS = {
       return !(await ev(`!!document.querySelector("#page [data-encuesta]")`)) || "tarjeta sin 0003";
     },
     "panel-sin-0003": async () => {
-      // Sin la migración 0003 el panel no se rompe: explica qué falta.
-      erroresEsperados.push([/jump_encuesta/, /404/]);
+      // Sin la migración 0003 el panel no se rompe: explica qué falta (sin 404 en la consola).
       await sql("drop table if exists public.jump_encuesta_votos, public.jump_encuesta_opciones, public.jump_encuestas cascade");
       await entrarEquipo();
       await ir("a/encuestas");

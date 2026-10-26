@@ -408,6 +408,7 @@ export function crearJC({ alTocar } = {}) {
   on(globo, "pointerdown", (e) => { if (e.pointerType !== "mouse") pausar("toque"); });
   on(globo, "pointerup", () => reanudar("toque"));
   on(globo, "pointercancel", () => reanudar("toque"));
+  on(globo, "click", () => cerrarGlobo()); // tocarlo lo cierra: en el celular tapa buena parte de la pantalla
   on(jc, "focusin", () => pausar("foco"));
   on(jc, "focusout", (e) => { if (!jc.contains(e.relatedTarget)) reanudar("foco"); });
   on(document, "focusin", revisarCampo);

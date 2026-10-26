@@ -155,6 +155,40 @@ Superficie nueva: el formulario «Postula» de `/jump/` (público, sin sesión) 
 
 Riesgo aceptado: el límite por conexión se salta cambiando de IP; si llega spam de verdad, el paso siguiente es Turnstile (ya listado en «Pendiente»). El equipo puede borrar lo que llegue.
 
+### Encuestas de JUMP (2026-10-26)
+Superficie nueva: la «Encuesta del mes» (`supabase/jump/0003_encuestas.sql`: 3 tablas y 9 funciones). Votan cualquier visitante de `/jump/` (público, sin sesión) por `GET`/`POST /api/jump-publico` (Edge, `service_role`) y los inscritos desde la comunidad; los inscritos también proponen un curso; el equipo arma, abre, cierra y borra encuestas desde su panel. Datos: el voto de cada inscrito (con su cuenta), las ideas propuestas (con quién las propuso) y, del voto público, huellas HMAC del aparato y de la conexión.
+
+- **Nadie escribe votos directo.** Los inscritos votan y proponen por funciones (`jump_votar`, `jump_proponer`) que revisan que sean miembros activos y que la encuesta siga abierta. El voto público solo lo guarda la API, con `jump_voto_publico`, que solo puede ejecutar `service_role`.
+- **Freno a votos en masa.** Solo desde el mismo sitio, cuerpo de hasta 1 KB, un voto por aparato (se puede cambiar) y hasta 30 aparatos por conexión y encuesta (en IPv6 cuenta la red /64). El tope se revisa y el voto se guarda en un solo paso, con un candado por encuesta y conexión: muchos votos a la vez no lo pasan.
+- **Quién ve qué.** Afuera (página pública e inscritos) solo porcentajes, nunca cantidades ni quién votó. Quién propuso cada idea y los votos por origen los ve solo el equipo (`jump_encuesta_conteos`); cada inscrito solo sabe cuál es la suya. `propuesta_por` y las huellas no se pueden leer desde el navegador (permiso por columna).
+- **Huellas que vencen.** Las huellas del voto público se borran 30 días después de cerrar la encuesta (`jump_olvidar_huellas`, en cada lectura de `/api/jump-publico` y en cada voto); el voto sigue contando. Nunca se guarda la IP ni el id del aparato, solo su HMAC (clave derivada de `JUMP_SECRET`).
+- **El panel guarda en un paso.** `jump_guardar_encuesta` corre con los permisos de quien llama (`security invoker`), solo para un admin activo, y si algo falla no deja nada a medias. Borra solo las opciones que el equipo quitó, nunca las ideas que llegaron mientras editaba.
+- **Una idea por persona y encuesta**, también desde dos pestañas a la vez (candado en `jump_proponer` e índice único).
+- **Lectura pública con caché en Vercel.** `GET /api/jump-publico` lo guarda la red de Vercel 30 s (`Vercel-CDN-Cache-Control`); el navegador no (`no-cache`). No sale nada que no sea público: ni ejemplos, ni borradores, ni Zoom, ni mensajes de las clases.
+
+| Caso de abuso | Prueba | Resultado |
+|---|---|---|
+| Leer o votar sin sesión directo en la base | «anon no lee ni ejecuta nada de encuestas» | Nada visible ni ejecutable |
+| Escribir votos directo o leer las huellas | «nadie inserta votos directo ni lee las huellas»; «el voto público solo lo guarda la API (service_role), con el tope por conexión en la base» | Rechazado |
+| Votar en masa desde una conexión | «tope por conexión: el aparato 31 desde la misma IP → 429, otra IP sí»; «tope por conexión con 60 votos a la vez desde la misma IP: entran 30»; «tope por conexión en IPv6: las direcciones de una misma red /64 cuentan como una conexión»; pantalla `landing-voto-tope` | 429 con aviso en la página |
+| Votar dos veces con el mismo aparato | «votar: un voto por aparato, cambiarlo no duplica» | Cambia el voto, no suma otro |
+| Votar desde otro sitio o con datos fuera de forma | «votar valida origen, método, cuerpo y opción» | 403 / 400 |
+| Votar en una encuesta cerrada, de ejemplo o en borrador | «en una encuesta cerrada no se vota ni se propone»; «en una encuesta de ejemplo no se vota desde la página»; «GET nunca devuelve encuestas de ejemplo» | 409 / rechazado |
+| Ver borradores o datos privados desde la página pública | «el emprendedor ve la abierta y las cerradas, no los borradores»; «GET da la próxima clase sin datos privados y sin ejemplos ni borradores» | Solo lo publicado |
+| Saber quién propuso o votó por cada idea | «quién propuso cada idea lo ve solo el equipo; cada inscrito sabe cuál es la suya»; «resultados: porcentajes sin conteos para el emprendedor; conteos por origen solo para el equipo» | Solo el equipo |
+| Proponer varias ideas (también desde dos pestañas) o repetir una | «proponer crea la opción, vota por ella y solo una vez»; «una idea por persona y encuesta, aunque proponga desde dos pestañas a la vez»; pantalla `comunidad-idea-repetida` | Una por persona; la repetida se rechaza |
+| Suspendida que sigue votando | «suspendida no vota» | Rechazado |
+| Emprendedor que arma o edita encuestas | «el equipo arma la encuesta; un emprendedor no»; «el equipo guarda la encuesta en un paso: puede intercambiar dos textos y, si algo falla, no cambia nada» | Rechazado |
+| Un voto apuntando a una opción de otra encuesta | «un voto no puede apuntar a una opción de otra encuesta» | Rechazado por la tabla |
+| Guardar huellas para siempre | «las huellas del voto público se borran 30 días después de cerrar la encuesta; el voto sigue contando»; «GET borra las huellas de las encuestas cerradas hace más de 30 días» | Se borran; el voto queda |
+| Perder ideas de los inscritos al guardar en el panel | pantallas `panel-guardar-conserva-ideas`, `panel-intercambiar-textos` | Las ideas y sus votos siguen |
+| Sin la 0003 aplicada | «sin la tabla de encuestas (falta la 0003) GET responde 200 con encuesta null»; pantallas `sin-0003`, `panel-sin-0003` | Sin errores; el panel dice qué falta |
+
+Riesgos aceptados:
+- **El tope por conexión no es un tope por persona.** Borrando los datos del navegador se puede votar otra vez, hasta 30 aparatos por conexión. Al revés, una red con muchas personas detrás de la misma IP (un colegio, una operadora móvil) puede llegar al tope: el aviso dice que intenten desde otra red. La encuesta orienta al equipo; no decide nada sola.
+- **Reabrir una encuesta cerrada hace más de 30 días** deja votar otra vez a quien ya votó desde la página pública (sus huellas ya se borraron). Reabrir una cerrada hace menos, no.
+- **Resultados de hasta 90 s** para quien no acaba de votar (30 s de caché en Vercel y hasta 60 s más mientras la renueva). Quien acaba de votar pide los suyos frescos.
+
 ## Pendiente / riesgos aceptados
 - Turnstile (o equivalente) si el spam supera a las capas actuales.
 - CAPTCHA en el inicio de sesión del panel (Supabase Auth → Attack Protection) si se detectan intentos de fuerza bruta; hoy lo limita Supabase por IP.

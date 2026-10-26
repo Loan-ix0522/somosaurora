@@ -51,7 +51,7 @@ const DIALOGOS = {
   <form id="borrarEjForm" novalidate>
     <div class="dlg-body">
       <div class="dlg-head"><span class="dlg-ic">${ic("trash")}</span><h2 id="borrarEjTitulo">¿Borrar los datos de ejemplo?</h2></div>
-      <p>Se borran las personas, mentorías, clases, avisos y publicaciones de ejemplo. No se puede deshacer.</p>
+      <p>Se borran las personas, mentorías, clases, avisos, publicaciones y la encuesta de ejemplo. No se puede deshacer.</p>
       <div id="borrarEjAviso" class="aj-aviso"></div>
       <div class="field"><label class="label" for="borrarEjTexto">Para confirmar, escribe <b>BORRAR</b></label><input class="input" id="borrarEjTexto" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>
     </div>
@@ -145,7 +145,7 @@ function espacioSeccion(al) {
 function ejemplosSeccion() {
   const hay = hayEjemplos();
   return `<section class="panel aj" aria-labelledby="t-ej">
-    <header class="aj-head"><div><h2 id="t-ej">Datos de ejemplo</h2><p>Personas, mentorías, clases y publicaciones de mentira para mostrar cómo se ve la plataforma antes de tener contenido real.</p></div></header>
+    <header class="aj-head"><div><h2 id="t-ej">Datos de ejemplo</h2><p>Personas, mentorías, clases, publicaciones y una encuesta de mentira para mostrar cómo se ve la plataforma antes de tener contenido real.</p></div></header>
     <div class="aj-body">
       <p class="aj-estado${hay ? " ok" : ""}" id="ejemplosEstado">${ic(hay ? "check" : "grid")}<span>${hay ? "<b>Cargados.</b> Se marcan con la etiqueta Ejemplo." : "<b>No hay</b> datos de ejemplo."}</span></p>
       <div class="aj-acciones">${hay

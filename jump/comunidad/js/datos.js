@@ -579,6 +579,57 @@ export async function cargarEncuesta() {
 export const votarEncuesta = async (opcionId) => { await rpcEncuesta("jump_votar", { p_opcion: opcionId }); };
 export const proponerCurso = (encuestaId, texto) => rpcEncuesta("jump_proponer", { p_encuesta: encuestaId, p_texto: texto });
 
+// El equipo (panel a/encuestas): todas las encuestas, cada opción con sus votos por origen y quién la propuso.
+// Sin la 0003 responde "sin_tabla" para que el panel lo explique.
+export async function listarEncuestas() {
+  await iniciar();
+  const r = await q(sb.from("jump_encuestas").select("id,pregunta,estado,abierta_en,cerrada_en,creada_en,es_ejemplo").order("creada_en", { ascending: false }), SIN_ENCUESTAS);
+  if (r.error) return "sin_tabla";
+  const [ops, ...conteos] = await Promise.all([
+    q(sb.from("jump_encuesta_opciones").select("id,encuesta_id,texto,orden,propuesta_por").order("orden").order("creada_en")),
+    ...r.data.map((e) => q(sb.rpc("jump_encuesta_conteos", { p_encuesta: e.id }))),
+  ]);
+  const n = new Map(conteos.flatMap((c) => c.data).map((x) => [x.opcion_id, x]));
+  return r.data.map((e) => ({
+    id: e.id, pregunta: e.pregunta, estado: e.estado, abiertaEn: e.abierta_en, cerradaEn: e.cerrada_en, creadaEn: e.creada_en, esEjemplo: e.es_ejemplo,
+    opciones: ops.data.filter((o) => o.encuesta_id === e.id).map((o) => ({
+      id: o.id, texto: o.texto, orden: o.orden, propuestaPor: o.propuesta_por || null,
+      publico: n.get(o.id)?.publico ?? 0, inscritos: n.get(o.id)?.inscritos ?? 0,
+    })),
+  }));
+}
+
+// Dos opciones con el mismo texto (sin importar mayúsculas): la base lo rechaza (índice único).
+const MSG_OPCION_REPETIDA = "Dos opciones quedaron con el mismo texto. Revisa la lista.";
+const qOpcion = async (consulta) => {
+  const r = await q(consulta, ["23505"]);
+  if (r.error) throw new ErrorJump("opcion_repetida", MSG_OPCION_REPETIDA);
+  return r;
+};
+
+// Crea (como borrador) o corrige una encuesta. Las opciones quedan en el orden de la lista: se corrigen las que
+// siguen, se agregan las nuevas y se borran las que se quitaron (con sus votos).
+export async function guardarEncuesta({ id, pregunta, opciones }) {
+  await iniciar();
+  if (id) await q(sb.from("jump_encuestas").update({ pregunta }).eq("id", id));
+  else id = (await q(sb.from("jump_encuestas").insert({ pregunta }).select("id").single())).data.id;
+  const antes = (await q(sb.from("jump_encuesta_opciones").select("id").eq("encuesta_id", id))).data.map((o) => o.id);
+  const quedan = new Set(opciones.filter((o) => o.id).map((o) => o.id));
+  const fuera = antes.filter((x) => !quedan.has(x));
+  if (fuera.length) await q(sb.from("jump_encuesta_opciones").delete().in("id", fuera));
+  for (const [i, o] of opciones.entries()) {
+    if (o.id) await qOpcion(sb.from("jump_encuesta_opciones").update({ texto: o.texto, orden: i + 1 }).eq("id", o.id));
+    else await qOpcion(sb.from("jump_encuesta_opciones").insert({ encuesta_id: id, texto: o.texto, orden: i + 1 }));
+  }
+  return id;
+}
+
+// Abrir cierra la que esté abierta (una sola a la vez); lo hace la base, en un paso.
+export const abrirEncuesta = async (id) => { await iniciar(); await q(sb.rpc("jump_abrir_encuesta", { p: id })); };
+export const cerrarEncuesta = async (id) => { await iniciar(); await q(sb.from("jump_encuestas").update({ estado: "cerrada" }).eq("id", id)); };
+export const borrarEncuesta = async (id) => { await iniciar(); await q(sb.from("jump_encuestas").delete().eq("id", id)); };
+export const borrarOpcion = async (id) => { await iniciar(); await q(sb.from("jump_encuesta_opciones").delete().eq("id", id)); };
+
 // ---------- muro ----------
 
 export const MSG_MURO = {

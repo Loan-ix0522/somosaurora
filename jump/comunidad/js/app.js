@@ -10,6 +10,7 @@ import * as muro from "./vistas-muro.js";
 import * as ajustes from "./vistas-ajustes.js";
 import * as postulaciones from "./vistas-postulaciones.js";
 import * as encuestas from "./vistas-encuestas.js";
+import { jcPantalla } from "./jc-comunidad.js";
 
 export const estado = { yo: null, avisosNuevos: 0, postulacionesNuevas: 0, mensajeIngreso: "" };
 const ACT = {}, ENVIOS = {}, ENTRADAS = {}, CAMBIOS = {}, RUTAS = [];
@@ -32,6 +33,7 @@ export async function cerrarSesion(mensaje = "") {
   estado.avisosNuevos = 0;
   estado.postulacionesNuevas = 0;
   for (const m of MODULOS) m.limpiar?.(); // nada de lo cargado queda para la próxima persona
+  jcPantalla("ingreso", null);
   await datos.salir();
   estado.mensajeIngreso = mensaje;
   ir("ingreso");
@@ -44,7 +46,7 @@ const MENU = {
   e: [["e/inicio", "home", "Inicio", "Inicio"], ["e/mentorias", "play", "Mentorías", "Mentorías"], ["e/clases", "video", "Clases en vivo", "Clases"],
     ["e/muro", "chat", "Comunidad", "Comunidad"], ["e/avisos", "mega", "Avisos", "Avisos"], ["e/perfil", "user", "Mi perfil", null]],
   a: [["a/resumen", "grid", "Resumen", "Resumen"], ["a/mentorias", "play", "Mentorías", "Mentorías"], ["a/clases", "video", "Clases en vivo", "Clases"],
-    ["a/emprendedores", "users", "Emprendedores", "Personas"], ["a/postulaciones", "mail", "Postulaciones", null], ["a/muro", "chat", "Comunidad", "Comunidad"],
+    ["a/emprendedores", "users", "Emprendedores", "Personas"], ["a/postulaciones", "mail", "Postulaciones", null], ["a/encuestas", "chart", "Encuestas", null], ["a/muro", "chat", "Comunidad", "Comunidad"],
     ["a/avisos", "mega", "Avisos", null], ["a/ajustes", "gear", "Ajustes", null]],
 };
 
@@ -102,6 +104,7 @@ function pintar(n, path, titulo, html, despues) {
   if (path !== ultima) { window.scrollTo(0, 0); const pg = $("#page"); if (pg && ultima) pg.focus({ preventScroll: true }); }
   ultima = path;
   despues?.();
+  jcPantalla(path, estado.yo);
 }
 
 async function render() {

@@ -120,3 +120,31 @@ test("borrar exige escribir BORRAR; con BORRAR no queda nada de ejemplo y lo rea
   // Se pueden volver a cargar.
   assert.equal((await admin("ejemplos-cargar")).status, 200);
 });
+
+test("ejemplos: carga una encuesta abierta de ejemplo y la borra con lo demás", async () => {
+  // (la prueba anterior volvió a cargar los ejemplos)
+  assert.equal(await n("select count(*)::int n from jump_encuestas where es_ejemplo and estado = 'abierta'"), 1);
+  assert.equal(await n("select count(*)::int n from jump_encuesta_opciones o join jump_encuestas e on e.id = o.encuesta_id where e.es_ejemplo and o.es_ejemplo"), 4);
+  assert.equal(await n("select count(*)::int n from jump_encuesta_opciones where es_ejemplo and propuesta_por is not null"), 1);
+  const votos = (await sim.db.query(`select v.origen, count(*)::int n from jump_encuesta_votos v join jump_encuestas e on e.id = v.encuesta_id
+    where e.es_ejemplo group by v.origen order by v.origen`)).rows;
+  assert.deepEqual(votos, [{ origen: "inscrito", n: 10 }, { origen: "publico", n: 46 }]);
+  // Los inscritos de ejemplo la ven en su comunidad, como el resto de los ejemplos.
+  const r = await rest("jump_encuestas?select=id,es_ejemplo&estado=eq.abierta", jwtE);
+  assert.equal(r.datos.length, 1);
+  assert.equal(r.datos[0].es_ejemplo, true);
+
+  const b = await admin("ejemplos-borrar", { confirmacion: "BORRAR" });
+  assert.equal(b.status, 200, JSON.stringify(b));
+  assert.equal(b.borrados.encuestas, 1);
+  for (const t of ["jump_encuestas", "jump_encuesta_opciones"]) assert.equal(await n(`select count(*)::int n from ${t} where es_ejemplo`), 0, t);
+  assert.equal(await n("select count(*)::int n from jump_encuesta_votos"), 0);
+
+  // Con una encuesta real abierta, la de ejemplo entra como borrador: no la cierra.
+  const real = (await sim.db.query("insert into jump_encuestas (pregunta, estado) values ('¿Qué taller quieres para enero?', 'abierta') returning id")).rows[0].id;
+  assert.equal((await admin("ejemplos-cargar")).status, 200);
+  assert.equal(await n("select count(*)::int n from jump_encuestas where es_ejemplo and estado = 'borrador'"), 1);
+  assert.equal(await n("select count(*)::int n from jump_encuestas where id = $1 and estado = 'abierta'", [real]), 1);
+  assert.equal((await admin("ejemplos-borrar", { confirmacion: "BORRAR" })).status, 200);
+  assert.equal(await n("select count(*)::int n from jump_encuestas where id = $1", [real]), 1);
+});

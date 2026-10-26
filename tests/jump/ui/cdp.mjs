@@ -1646,6 +1646,185 @@ const ESCENARIOS = {
       await esperar(`location.hash === "#a/muro" && !!document.querySelector("#muroLista")`);
       return !(await ev(`!!document.querySelector("#page [data-encuesta]")`)) || "el equipo ve la tarjeta en su muro";
     },
+    "panel-crear-abrir": async () => {
+      await sql("delete from public.jump_encuestas");
+      await entrarEquipo();
+      await ir("a/encuestas");
+      await esperar(`location.hash === "#a/encuestas" && !!document.querySelector('[data-act="enc-nueva"]')`);
+      const vacio = await esperar(`document.querySelector("#page .empty")?.textContent`);
+      if (!vacio.includes("Todavía no hay encuestas")) return "vacío: " + vacio;
+      await clic('[data-act="enc-nueva"]');
+      await esperar(`!!document.querySelector("#encForm #encPregunta")`);
+      // Sin pregunta ni opciones: lo dice en los campos y no guarda.
+      await clic("#encForm [type=submit]");
+      const e1 = await esperar(`document.querySelector("#encPreguntaErr:not([hidden])")?.textContent`);
+      const e2 = await esperar(`document.querySelector("#encOpsErr:not([hidden])")?.textContent`);
+      if (!e1.includes("pregunta") || !e2.includes("2 opciones")) return "errores: " + JSON.stringify([e1, e2]);
+      await escribir("#encPregunta", "¿Qué taller quieres para enero?");
+      await escribir("#encForm .enc-ed-op:nth-child(1) input", "Cómo calcular mis costos");
+      await escribir("#encForm .enc-ed-op:nth-child(2) input", "Fotos que venden");
+      await clic('[data-act="enc-op-agregar"]');
+      await escribir("#encForm .enc-ed-op:nth-child(3) input", "Mi primera factura");
+      // La tercera sube al primer lugar.
+      await clic('#encForm .enc-ed-op:nth-child(3) [data-act="enc-op-subir"]');
+      await clic('#encForm .enc-ed-op:nth-child(2) [data-act="enc-op-subir"]');
+      await foto("a-encuesta-editor");
+      await clic("#encForm [type=submit]");
+      const id = await esperar(`!document.querySelector("#encForm") && document.querySelector("#page [data-enc-admin]")?.dataset.encAdmin`);
+      const e = await fila("select estado, pregunta from public.jump_encuestas where id = $1", [id]);
+      const ops = (await sql("select texto from public.jump_encuesta_opciones where encuesta_id = $1 order by orden", [id])).rows.map((r) => r.texto);
+      if (e.estado !== "borrador" || e.pregunta !== "¿Qué taller quieres para enero?" || JSON.stringify(ops) !== JSON.stringify(["Mi primera factura", "Cómo calcular mis costos", "Fotos que venden"]))
+        return JSON.stringify({ e, ops });
+      await clic(`[data-act="enc-abrir"][data-id="${id}"]`);
+      await esperar(`document.querySelector('[data-enc-admin="${id}"] .pill')?.textContent.trim() === "Abierta"`);
+      await foto("a-encuesta-abierta");
+      const estado = (await fila("select estado from public.jump_encuestas where id = $1", [id])).estado;
+      return estado === "abierta" || "estado: " + estado;
+    },
+    "panel-abrir-cierra-otra": async () => {
+      const e = await sembrarEncuesta();
+      await sql("update public.jump_encuesta_opciones set propuesta_por = $2 where id = $1", [e.o[2], X.E.id]);
+      const { id: otra } = await fila("insert into public.jump_encuestas (pregunta, estado) values ('¿Qué taller quieres para enero?', 'borrador') returning id");
+      await sql("insert into public.jump_encuesta_opciones (encuesta_id, texto, orden) values ($1, 'Costos', 1), ($1, 'Precios', 2)", [otra]);
+      await entrarEquipo();
+      await ir("a/encuestas");
+      await esperar(`!!document.querySelector('[data-enc-admin="${e.id}"]') && !!document.querySelector('[data-enc-admin="${otra}"]')`);
+      // La abierta va primero, con los votos por origen y quién propuso cada idea.
+      const t = await ev(`(() => { const c = document.querySelector('[data-enc-admin="${e.id}"]');
+        return { primera: document.querySelector("#page [data-enc-admin]") === c,
+          n: [...c.querySelectorAll(".enc-res")].map((r) => r.querySelector(".enc-res-n").textContent.trim()),
+          quien: c.querySelector('.enc-res[data-op-id="${e.o[2]}"] .enc-res-quien')?.textContent.trim() }; })()`);
+      if (!t.primera || JSON.stringify(t.n) !== JSON.stringify(["público 2 · inscritos 1", "público 1 · inscritos 0", "público 0 · inscritos 0"]) || t.quien !== "Propuesta por María José Vera")
+        return JSON.stringify(t);
+      await foto("a-encuestas-lista");
+      await clic(`[data-act="enc-abrir"][data-id="${otra}"]`);
+      const msg = await esperar(`document.querySelector("#dlgEnc[open] #dlgEncTexto")?.textContent.trim()`);
+      if (msg !== "Se cerrará “¿Qué taller quieres para diciembre?”.") return "aviso: " + msg;
+      await foto("a-encuesta-abrir-confirma");
+      await clic("#encConfirmForm [type=submit]");
+      await esperar(`document.querySelector('[data-enc-admin="${otra}"] .pill')?.textContent.trim() === "Abierta"`);
+      const est = (await sql("select id, estado from public.jump_encuestas")).rows;
+      const de = (id) => est.find((x) => x.id === id)?.estado;
+      return (de(e.id) === "cerrada" && de(otra) === "abierta") || JSON.stringify(est);
+    },
+    "panel-quitar-opcion-confirma": async () => {
+      const e = await sembrarEncuesta();
+      await entrarEquipo();
+      await ir("a/encuestas");
+      await esperar(`!!document.querySelector('[data-act="enc-editar"][data-id="${e.id}"]')`);
+      await clic(`[data-act="enc-editar"][data-id="${e.id}"]`);
+      await esperar(`document.querySelectorAll("#encForm .enc-ed-op").length === 3`);
+      // La primera tiene 3 votos: pide confirmación y, si se cancela, sigue ahí.
+      await clic('#encForm .enc-ed-op:nth-child(1) [data-act="enc-op-quitar"]');
+      const msg = await esperar(`document.querySelector("#dlgEnc[open] #dlgEncTexto")?.textContent.trim()`);
+      if (msg !== "Se perderán 3 votos.") return "aviso: " + msg;
+      await foto("a-encuesta-quitar-confirma");
+      await clic('#dlgEnc [data-act="cerrar"]');
+      await esperar(`!document.querySelector("#dlgEnc[open]")`);
+      if ((await ev(`document.querySelectorAll("#encForm .enc-ed-op").length`)) !== 3) return "se quitó al cancelar";
+      await clic('#encForm .enc-ed-op:nth-child(1) [data-act="enc-op-quitar"]');
+      await esperar(`!!document.querySelector("#dlgEnc[open]")`);
+      await clic("#encConfirmForm [type=submit]");
+      await esperar(`document.querySelectorAll("#encForm .enc-ed-op").length === 2`);
+      // Una opción nueva (sin votos) se quita sin preguntar.
+      await clic('[data-act="enc-op-agregar"]');
+      await clic('#encForm .enc-ed-op:nth-child(3) [data-act="enc-op-quitar"]');
+      if (await ev(`!!document.querySelector("#dlgEnc[open]") || document.querySelectorAll("#encForm .enc-ed-op").length !== 2`)) return "preguntó por una opción sin votos";
+      await clic('[data-act="enc-op-agregar"]');
+      await escribir("#encForm .enc-ed-op:nth-child(3) input", "Ventas en ferias");
+      await clic("#encForm [type=submit]");
+      await esperar(`!document.querySelector("#encForm") && !!document.querySelector('[data-enc-admin="${e.id}"] .enc-res')`);
+      const ops = async () => (await sql("select id, texto from public.jump_encuesta_opciones where encuesta_id = $1 order by orden", [e.id])).rows;
+      const votos = async () => (await fila("select count(*)::int n from public.jump_encuesta_votos where encuesta_id = $1", [e.id])).n;
+      let o = await ops();
+      if (JSON.stringify(o.map((x) => x.texto)) !== JSON.stringify(["Cómo sacar el RUC sin enredos", "Vender por WhatsApp Business", "Ventas en ferias"]) || (await votos()) !== 1)
+        return "después de guardar: " + JSON.stringify({ o, votos: await votos() });
+      // Borrar una idea desde los resultados también pide confirmación.
+      await clic(`[data-act="enc-op-borrar"][data-id="${o[0].id}"]`);
+      const m2 = await esperar(`document.querySelector("#dlgEnc[open] #dlgEncTexto")?.textContent.trim()`);
+      if (m2 !== "Se perderá 1 voto.") return "aviso al borrar idea: " + m2;
+      await clic("#encConfirmForm [type=submit]");
+      await esperar(`!document.querySelector('.enc-res[data-op-id="${o[0].id}"]')`);
+      o = await ops();
+      return (o.length === 2 && (await votos()) === 0) || JSON.stringify({ o, votos: await votos() });
+    },
+    // ---------- comunidad: JC ----------
+    "comunidad-jc-inicio-grande": async () => {
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector(".jc-escena:not(.entrando)")`);
+      await esperar(jcQuieto);
+      if ((await modoJC()) !== "grande") return "modo en el Inicio: " + (await modoJC());
+      // Se para a la derecha del saludo, con los pies en el borde de abajo de su sitio, sin tapar el saludo.
+      const m = await ev(`(() => { const r = (s) => document.querySelector(s).getBoundingClientRect();
+        const j = r(".jc-escena .jc"), s = r(".jc-sitio-com"), h = r("#page .page-head h1"), c = r(".jc-escena .jc-cuerpo");
+        return { piesOk: Math.abs(c.bottom - s.bottom) < 6, tapa: j.left < h.right && j.right > h.left && j.top < h.bottom && j.bottom > h.top, alto: Math.round(j.height) }; })()`);
+      if (!m.piesOk || m.tapa) return "posición: " + JSON.stringify(m);
+      await foto("e-jc-inicio");
+      // En el resto de pantallas del emprendedor, a la esquina.
+      await clic('a.nav-link[href="#e/mentorias"], .tabbar a[href="#e/mentorias"]');
+      await esperar(`location.hash === "#e/mentorias" && document.querySelector(".jc-escena")?.dataset.modo === "esquina"`);
+      return true;
+    },
+    "comunidad-jc-esquina": async () => {
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector(".jc-escena")`);
+      for (const h of ["e/clases", "e/muro", "e/avisos", "e/perfil"]) {
+        await ir(h);
+        await esperar(`location.hash === "#${h}" && !!document.querySelector("#page") && document.querySelector(".jc-escena")?.dataset.modo === "esquina"`);
+      }
+      const v = await ev(`(() => { const j = document.querySelector(".jc-escena .jc").getBoundingClientRect(); return { dentro: j.right <= innerWidth && j.bottom <= innerHeight, pegado: innerWidth - j.right < 40 }; })()`);
+      await foto("e-jc-esquina");
+      return (v.dentro && v.pegado) || "esquina: " + JSON.stringify(v);
+    },
+    "comunidad-jc-no-en-panel": async () => {
+      // Antes de entrar (pantalla de ingreso) no hay JC, y el equipo tampoco lo ve.
+      await abrir("ingreso");
+      await dormir(400);
+      if (await ev(`!!document.querySelector(".jc-escena")`)) return "JC en el ingreso";
+      await entrarEquipo();
+      await dormir(1000);
+      const oculto = await ev(`!document.querySelector(".jc-escena") || getComputedStyle(document.querySelector(".jc-escena")).display === "none"`);
+      return oculto || "JC en el panel del equipo";
+    },
+    "comunidad-jc-no-en-video": async () => {
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector(".jc-escena")`);
+      await ir("e/m/" + X.P);
+      await esperar(`location.hash === "#e/m/${X.P}" && !!document.querySelector("#page")`);
+      await dormir(500);
+      if (!(await ev(`getComputedStyle(document.querySelector(".jc-escena")).display === "none"`))) return "JC dentro de una mentoría";
+      // Al salir de ella, vuelve.
+      await ir("e/clases");
+      await esperar(`location.hash === "#e/clases" && getComputedStyle(document.querySelector(".jc-escena")).display !== "none"`);
+      return true;
+    },
+    "comunidad-jc-anuncia-clase": async () => {
+      await sql("delete from public.jump_clases");
+      await sql("insert into public.jump_clases (titulo, inicia_en, duracion_min) values ('Cómo poner precio a lo que vendes', now() + interval '3 days', 60)");
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector(".jc-escena:not(.entrando)")`);
+      await esperar(jcQuieto);
+      // Lo primero que dice es presentarse; al tocarlo, cuenta lo importante: la próxima clase con su día y hora.
+      await clic(".jc-toque");
+      const g = await esperar(`document.querySelector(".jc-globo.visible")?.textContent.includes("«Cómo poner precio a lo que vendes»") && document.querySelector(".jc-globo.visible").textContent`);
+      await foto("e-jc-clase");
+      return /próxima clase en vivo/.test(g) && /a las \d/.test(g) || "globo: " + g;
+    },
+    "comunidad-jc-esconder": async () => {
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector(".jc-escena:not(.entrando)")`);
+      await clic(".jc-esconder");
+      const e1 = await ev(`({ esc: document.querySelector(".jc-escena").classList.contains("escondido"), mem: localStorage.getItem("jc.escondido") })`);
+      if (!e1.esc || e1.mem !== "true") return "al esconderlo: " + JSON.stringify(e1);
+      // Al recargar sigue escondido y callado.
+      await send("Page.reload");
+      await esperar(`document.readyState === "complete" && location.hash === "#e/inicio" && !!document.querySelector(".jc-escena")`);
+      await dormir(1500);
+      const e2 = await ev(`({ esc: document.querySelector(".jc-escena").classList.contains("escondido"), volver: !document.querySelector(".jc-volver").hidden, globo: !!document.querySelector(".jc-globo.visible") })`);
+      if (!e2.esc || !e2.volver || e2.globo) return "al recargar: " + JSON.stringify(e2);
+      await clic(".jc-volver");
+      return (await ev(`localStorage.getItem("jc.escondido")`)) === "false" || "no se guardó que volvió";
+    },
     desborde: async () => {
       // Ni JC ni su globo ensanchan la página.
       await landing();
@@ -1653,6 +1832,72 @@ const ESCENARIOS = {
       await dormir(400);
       const d = await desborde();
       return d <= 0 || "desborde: " + d;
+    },
+    // ---------- transversales ----------
+    "jc-no-tapa": async () => {
+      // JC nunca queda encima de lo que se toca: el botón de postular y las opciones de la encuesta.
+      await sembrarEncuesta();
+      await landing();
+      await esperar(`!!document.querySelector(".jc-escena:not(.entrando)")`);
+      for (const sel of ["#sendBtn", "#opts .opt"]) {
+        await ev(`document.querySelector(${JSON.stringify(sel)}).scrollIntoView({ block: "center" })`);
+        await dormir(1600);
+        const r = await ev(`(() => { const b = document.querySelector(${JSON.stringify(sel)}), r = b.getBoundingClientRect();
+          const puntos = [[.5, .5], [.1, .5], [.9, .5]].map(([x, y]) => document.elementFromPoint(r.left + r.width * x, r.top + r.height * y));
+          return puntos.every((e) => e && b.contains(e) && !e.closest(".jc-escena")); })()`);
+        if (!r) return "JC tapa " + sel;
+      }
+      return true;
+    },
+    "jc-reduced-motion": async () => {
+      // Con «reducir movimiento», JC cambia de lugar sin el salto: nada animado en él.
+      await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+      try {
+        await landing();
+        await esperar(`!!document.querySelector(".jc-escena:not(.entrando)")`);
+        await ev(`window.scrollTo(0, document.querySelector("#proceso").offsetTop)`);
+        await esperar(`document.querySelector(".jc-escena")?.dataset.modo === "esquina"`);
+        await dormir(600);
+        const n = await ev(`document.querySelector(".jc-escena .jc").getAnimations({ subtree: true }).filter((a) => a.effect?.getComputedTiming().iterations !== Infinity && a.playState === "running").length`);
+        return n === 0 || "animaciones corriendo: " + n;
+      } finally {
+        await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }] });
+      }
+    },
+    "desborde-comunidad": async () => {
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector(".jc-escena:not(.entrando)")`);
+      await dormir(800);
+      for (const h of ["e/inicio", "e/muro"]) {
+        await ir(h);
+        await esperar(`location.hash === "#${h}" && !!document.querySelector("#page")`);
+        await dormir(400);
+        const d = await desborde();
+        if (d > 0) return `desborde en ${h}: ${d}`;
+      }
+      return true;
+    },
+    "sin-0003": async () => {
+      // Sin la migración 0003 (tablas de encuestas ausentes) la landing y el Inicio cargan sin romperse.
+      erroresEsperados.push([/jump-publico|jump_encuesta/, /status of (404|409|500|503)/]);
+      await sql("drop table if exists public.jump_encuesta_votos, public.jump_encuesta_opciones, public.jump_encuestas cascade");
+      await landing();
+      const e = await ev(`document.querySelector("#poll").dataset.estado`);
+      if (e !== "vacia") return "la landing sin 0003: " + e;
+      await esperar(`!!document.querySelector(".jc-escena")`);
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector(".page-head h1")`);
+      return !(await ev(`!!document.querySelector("#page [data-encuesta]")`)) || "tarjeta sin 0003";
+    },
+    "panel-sin-0003": async () => {
+      // Sin la migración 0003 el panel no se rompe: explica qué falta.
+      erroresEsperados.push([/jump_encuesta/, /404/]);
+      await sql("drop table if exists public.jump_encuesta_votos, public.jump_encuesta_opciones, public.jump_encuestas cascade");
+      await entrarEquipo();
+      await ir("a/encuestas");
+      const t = await esperar(`document.querySelector("#page .empty")?.textContent`);
+      await foto("a-encuestas-sin-0003");
+      return t.includes("Falta aplicar la migración 0003 en Supabase para usar las encuestas.") || t;
     },
     csp: async () => {
       const csp = consola.filter((c) => /Content Security Policy|Refused to/i.test(c));

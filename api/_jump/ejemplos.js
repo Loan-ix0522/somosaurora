@@ -88,6 +88,12 @@ const MURO = [
 // Asistencia: clase → cuántas personas activas confirmaron (y, en las pasadas, entraron).
 const ASISTENCIA = { c1: 7, c2: 3, c3: 2, p1: 8, p2: 5 };
 
+// Encuesta de ejemplo: [texto, votos del público, votos de inscritos]; la 4.ª la «propuso» un inscrito de ejemplo.
+const ENCUESTA = ["¿Qué taller te serviría más ahora?", [
+  ["Fotos de producto con el celular", 17, 4], ["Cómo acceder a un crédito para tu negocio", 12, 3],
+  ["Atención al cliente por WhatsApp Business", 10, 2], ["Empaques y etiquetas con tu marca", 7, 1],
+]];
+
 const ahora = () => Date.now();
 const haceHoras = (h) => new Date(ahora() - h * 3600e3).toISOString();
 const id = () => crypto.randomUUID();
@@ -145,6 +151,11 @@ async function contar() {
     }
   }
   return json({ ok: true, cargados, reales });
+}
+
+// Sin la migración 0003 no hay tablas de encuestas: el resto de los ejemplos entra igual.
+async function hayTablaEncuestas() {
+  return (await rest("jump_encuestas?select=id&limit=1")).ok;
 }
 
 async function cargar(ctx) {
@@ -223,8 +234,27 @@ async function cargar(ctx) {
     await insertar("jump_posts", posts);
     await insertar("jump_comentarios", comentarios);
 
+    // 5. Encuesta del mes de ejemplo. Si ya hay una real abierta, entra como borrador para no cerrarla.
+    let encuestas = 0;
+    if (await hayTablaEncuestas()) {
+      const hayAbierta = (await ids("jump_encuestas?estado=eq.abierta&select=id&limit=1")).length > 0;
+      const eId = id();
+      await insertar("jump_encuestas", [{ id: eId, pregunta: ENCUESTA[0], estado: hayAbierta ? "borrador" : "abierta", es_ejemplo: true }]);
+      const oIds = ENCUESTA[1].map(() => id());
+      await insertar("jump_encuesta_opciones", ENCUESTA[1].map(([texto], i) => ({
+        id: oIds[i], encuesta_id: eId, texto, orden: i + 1, es_ejemplo: true, propuesta_por: i === 3 ? activos[0] : null })));
+      const votos = [];
+      let d = 0, u = 0;
+      ENCUESTA[1].forEach(([, publico, inscritos], i) => {
+        for (let k = 0; k < publico; k++) votos.push({ encuesta_id: eId, opcion_id: oIds[i], origen: "publico", dispositivo_hash: `ejemplo-${++d}`, ip_hash: "ejemplo" });
+        for (let k = 0; k < inscritos; k++) votos.push({ encuesta_id: eId, opcion_id: oIds[i], origen: "inscrito", user_id: activos[u++] });
+      });
+      await insertar("jump_encuesta_votos", votos);
+      encuestas = 1;
+    }
+
     const cargados = { mentorias: MENTORIAS.length, miembros: miembros.length, clases: CLASES.length, avisos: AVISOS.length,
-      publicaciones: posts.length, comentarios: comentarios.length };
+      publicaciones: posts.length, comentarios: comentarios.length, encuestas };
     await bitacora(ctx.userId, "ejemplos-cargar", null, cargados);
     return json({ ok: true, cargados });
   } catch (e) {
@@ -247,6 +277,8 @@ async function borrarTodo(extras = []) {
   borrados.comentarios = await borrarFilas("jump_comentarios");
   borrados.publicaciones = await borrarFilas("jump_posts");
   borrados.avisos = await borrarFilas("jump_avisos");
+  // Sus opciones y votos se van con ella. Sin la 0003 no hay tabla y no hay nada que borrar.
+  borrados.encuestas = (await hayTablaEncuestas()) ? await borrarFilas("jump_encuestas") : 0;
   borrados.materiales = await borrarFilas("jump_materiales");
   borrados.modulos = await borrarFilas("jump_modulos");
   borrados.clases = await borrarFilas("jump_clases");

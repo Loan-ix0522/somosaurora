@@ -575,6 +575,40 @@ dialog[open]{animation:dlg .22s var(--ease-out)}
   .enc-prop-fila .input{flex:none}
 }
 
+/* ---------- panel: Encuestas ---------- */
+.enc-lista{display:grid;gap:16px;max-width:880px}
+.enc-adm,.enc-editor{display:grid;gap:14px;padding:20px 22px}
+.enc-adm-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.enc-adm-head h2{margin-top:8px;font-size:1.125rem}
+.enc-adm-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--ink-3);font-size:13.5px}
+.enc-adm-acts{display:flex;gap:8px;flex-wrap:wrap}
+.enc-res-lista{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.enc-res-top{display:flex;justify-content:space-between;gap:12px;font-weight:600}
+.enc-res-pct{flex:none;font-weight:800;font-variant-numeric:tabular-nums}
+.enc-res-bar{height:8px;margin:6px 0;border-radius:99px;background:#ECEFF7;overflow:hidden}
+.enc-res-bar i{display:block;height:100%;border-radius:inherit;background:var(--sun)}
+.enc-res-pie{display:flex;align-items:center;gap:6px 14px;flex-wrap:wrap;color:var(--ink-3);font-size:13px}
+.enc-res-pie .icon-btn{margin-left:auto;width:32px;height:32px}
+.enc-adm-total{color:var(--ink-3);font-size:13.5px}
+.enc-ed-campo{display:grid;gap:10px;min-width:0;margin:0;padding:0;border:0}
+.enc-ed-ops{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.enc-ed-op{display:flex;align-items:center;gap:6px}
+.enc-ed-op .input{flex:1;min-width:0}
+.enc-ed-votos{flex:none;color:var(--ink-3);font-size:12.5px;white-space:nowrap}
+.enc-ed-mas{justify-self:start}
+.enc-ed-pie{display:flex;justify-content:flex-end;gap:10px}
+@media (max-width:560px){.enc-adm,.enc-editor{padding:16px}.enc-ed-votos{display:none}}
+
+/* ---------- JC en el Inicio: se para a la derecha del saludo (jc.js lo centra en .jc-sitio-com y le alinea los pies) ---------- */
+.page-head.con-jc{position:relative;min-height:150px;padding-right:150px}
+.jc-sitio-com{position:absolute;right:12px;bottom:0;width:72px;height:150px;pointer-events:none}
+.jc-escena[data-modo="grande"] .jc{--alto-jc:150px}
+@media (max-width:900px){
+  .page-head.con-jc{min-height:110px;padding-right:96px}
+  .jc-sitio-com{width:53px;height:110px}
+  .jc-escena[data-modo="grande"] .jc{--alto-jc:110px}
+}
+
 /* ---------- celular ---------- */
 .tabbar{display:none}
 @media (max-width:1100px){

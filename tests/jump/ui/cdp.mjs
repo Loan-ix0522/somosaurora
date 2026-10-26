@@ -1748,6 +1748,22 @@ const ESCENARIOS = {
       o = await ops();
       return (o.length === 2 && (await votos()) === 0) || JSON.stringify({ o, votos: await votos() });
     },
+    "panel-guardar-conserva-ideas": async () => {
+      // Mientras el equipo corrige la pregunta, un inscrito propone una idea: al guardar, la idea y su voto siguen ahí.
+      const e = await sembrarEncuesta();
+      await entrarEquipo();
+      await ir("a/encuestas");
+      await esperar(`!!document.querySelector('[data-act="enc-editar"][data-id="${e.id}"]')`);
+      await clic(`[data-act="enc-editar"][data-id="${e.id}"]`);
+      await esperar(`document.querySelectorAll("#encForm .enc-ed-op").length === 3`);
+      const { id: idea } = await fila("insert into public.jump_encuesta_opciones (encuesta_id, texto, orden, propuesta_por) values ($1, 'Cómo vender por TikTok', 4, $2) returning id", [e.id, X.E2.id]);
+      await sql("insert into public.jump_encuesta_votos (encuesta_id, opcion_id, origen, user_id) values ($1, $2, 'inscrito', $3)", [e.id, idea, X.E2.id]);
+      await escribir("#encPregunta", "¿Qué taller quieres para enero?");
+      await clic("#encForm [type=submit]");
+      await esperar(`!document.querySelector("#encForm") && !!document.querySelector('[data-enc-admin="${e.id}"] .enc-res')`);
+      const f = await fila("select (select pregunta from public.jump_encuestas where id = $1) pregunta, (select count(*)::int from public.jump_encuesta_opciones where id = $2) idea, (select count(*)::int from public.jump_encuesta_votos where opcion_id = $2) votos", [e.id, idea]);
+      return (f.pregunta === "¿Qué taller quieres para enero?" && f.idea === 1 && f.votos === 1) || JSON.stringify(f);
+    },
     // ---------- comunidad: JC ----------
     "comunidad-jc-inicio-grande": async () => {
       await entrar(X.E);
@@ -1824,6 +1840,21 @@ const ESCENARIOS = {
       if (!e2.esc || !e2.volver || e2.globo) return "al recargar: " + JSON.stringify(e2);
       await clic(".jc-volver");
       return (await ev(`localStorage.getItem("jc.escondido")`)) === "false" || "no se guardó que volvió";
+    },
+    "comunidad-jc-bajo-barra": async () => {
+      // En el celular, al bajar por el Inicio, JC grande pasa por detrás de la barra de arriba (no tapa Perfil ni Salir).
+      if (!movil) return true;
+      await entrar(X.E);
+      await esperar(`location.hash === "#e/inicio" && !!document.querySelector(".jc-escena:not(.entrando)")`);
+      await esperar(jcQuieto);
+      await ev(`(() => { const j = document.querySelector(".jc-escena .jc-cuerpo").getBoundingClientRect(); window.scrollBy(0, j.top + j.height / 2 - 28); return true; })()`);
+      await dormir(300);
+      const r = await ev(`(() => { const j = document.querySelector(".jc-escena .jc-cuerpo").getBoundingClientRect(), m = document.querySelector(".mtop").getBoundingClientRect();
+        const x0 = Math.max(j.left, m.left), x1 = Math.min(j.right, m.right), y0 = Math.max(j.top, m.top), y1 = Math.min(j.bottom, m.bottom);
+        if (x1 <= x0 || y1 <= y0) return "JC no pasa por la barra: " + JSON.stringify({ j, m });
+        const e = document.elementFromPoint((x0 + x1) / 2, (y0 + y1) / 2);
+        return (!!e?.closest(".mtop") && !e.closest(".jc-escena")) || "encima de la barra: " + (e?.className || e?.tagName); })()`);
+      return r;
     },
     desborde: async () => {
       // Ni JC ni su globo ensanchan la página.

@@ -565,15 +565,15 @@ export async function cargarEncuesta() {
   }
   if (!e) return null;
   const [ops, res, voto] = await Promise.all([
-    q(sb.from("jump_encuesta_opciones").select("id,texto,propuesta_por").eq("encuesta_id", e.id).order("orden").order("creada_en")),
+    q(sb.from("jump_encuesta_opciones").select("id,texto").eq("encuesta_id", e.id).order("orden").order("creada_en")),
     q(sb.rpc("jump_encuesta_resultados", { p_encuesta: e.id }), SIN_ENCUESTAS),
     q(sb.from("jump_encuesta_votos").select("opcion_id").eq("encuesta_id", e.id)), // RLS: solo el voto propio
   ]);
   if (res.error) return null;
-  const pct = new Map(res.data.map((x) => [x.opcion_id, x.porcentaje]));
-  const yo = s?.user.id;
-  const opciones = ops.data.map((o) => ({ id: o.id, texto: o.texto, porcentaje: pct.get(o.id) ?? 0, propuestaPor: o.propuesta_por || null }));
-  return { id: e.id, pregunta: e.pregunta, estado: e.estado, opciones, miVoto: voto.data[0]?.opcion_id || null, yaPropuse: !!yo && opciones.some((o) => o.propuestaPor === yo) };
+  // Quién propuso cada idea no llega al navegador: solo si es la propia («Tu idea»).
+  const por = new Map(res.data.map((x) => [x.opcion_id, x]));
+  const opciones = ops.data.map((o) => ({ id: o.id, texto: o.texto, porcentaje: por.get(o.id)?.porcentaje ?? 0, propia: !!s && !!por.get(o.id)?.propia }));
+  return { id: e.id, pregunta: e.pregunta, estado: e.estado, opciones, miVoto: voto.data[0]?.opcion_id || null, yaPropuse: opciones.some((o) => o.propia) };
 }
 
 export const votarEncuesta = async (opcionId) => { await rpcEncuesta("jump_votar", { p_opcion: opcionId }); };
@@ -586,14 +586,14 @@ export async function listarEncuestas() {
   const r = await q(sb.from("jump_encuestas").select("id,pregunta,estado,abierta_en,cerrada_en,creada_en,es_ejemplo").order("creada_en", { ascending: false }), SIN_ENCUESTAS);
   if (r.error) return "sin_tabla";
   const [ops, ...conteos] = await Promise.all([
-    q(sb.from("jump_encuesta_opciones").select("id,encuesta_id,texto,orden,propuesta_por").order("orden").order("creada_en")),
+    q(sb.from("jump_encuesta_opciones").select("id,encuesta_id,texto,orden").order("orden").order("creada_en")),
     ...r.data.map((e) => q(sb.rpc("jump_encuesta_conteos", { p_encuesta: e.id }))),
   ]);
   const n = new Map(conteos.flatMap((c) => c.data).map((x) => [x.opcion_id, x]));
   return r.data.map((e) => ({
     id: e.id, pregunta: e.pregunta, estado: e.estado, abiertaEn: e.abierta_en, cerradaEn: e.cerrada_en, creadaEn: e.creada_en, esEjemplo: e.es_ejemplo,
     opciones: ops.data.filter((o) => o.encuesta_id === e.id).map((o) => ({
-      id: o.id, texto: o.texto, orden: o.orden, propuestaPor: o.propuesta_por || null,
+      id: o.id, texto: o.texto, orden: o.orden, propuestaPor: n.get(o.id)?.propuesta_por || null,
       publico: n.get(o.id)?.publico ?? 0, inscritos: n.get(o.id)?.inscritos ?? 0,
     })),
   }));
@@ -608,15 +608,13 @@ const qOpcion = async (consulta) => {
 };
 
 // Crea (como borrador) o corrige una encuesta. Las opciones quedan en el orden de la lista: se corrigen las que
-// siguen, se agregan las nuevas y se borran las que se quitaron (con sus votos).
-export async function guardarEncuesta({ id, pregunta, opciones }) {
+// siguen, se agregan las nuevas y se borran solo las que el equipo quitó (`quitar`, con sus votos). No se compara con
+// lo que hay ahora en la base: las ideas que los inscritos propusieron mientras se editaba no se tocan.
+export async function guardarEncuesta({ id, pregunta, opciones, quitar = [] }) {
   await iniciar();
   if (id) await q(sb.from("jump_encuestas").update({ pregunta }).eq("id", id));
   else id = (await q(sb.from("jump_encuestas").insert({ pregunta }).select("id").single())).data.id;
-  const antes = (await q(sb.from("jump_encuesta_opciones").select("id").eq("encuesta_id", id))).data.map((o) => o.id);
-  const quedan = new Set(opciones.filter((o) => o.id).map((o) => o.id));
-  const fuera = antes.filter((x) => !quedan.has(x));
-  if (fuera.length) await q(sb.from("jump_encuesta_opciones").delete().in("id", fuera));
+  if (quitar.length) await q(sb.from("jump_encuesta_opciones").delete().eq("encuesta_id", id).in("id", quitar));
   for (const [i, o] of opciones.entries()) {
     if (o.id) await qOpcion(sb.from("jump_encuesta_opciones").update({ texto: o.texto, orden: i + 1 }).eq("id", o.id));
     else await qOpcion(sb.from("jump_encuesta_opciones").insert({ encuesta_id: id, texto: o.texto, orden: i + 1 }));

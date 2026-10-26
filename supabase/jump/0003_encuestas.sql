@@ -12,9 +12,10 @@
 --     Solo puede haber una encuesta abierta a la vez.
 --   · Los inscritos ven la abierta y las cerradas (nunca los borradores). Votan y proponen una idea por
 --     funciones (jump_votar, jump_proponer); desde el navegador nadie escribe votos directo.
---   · En la página pública, el voto lo recibe /api/jump-publico (service_role), que frena abusos y guarda.
---     Las huellas del dispositivo y de la conexión solo las lee esa API.
---   · Afuera solo se muestran porcentajes; los conteos por origen los ve solo el equipo.
+--   · En la página pública, el voto lo recibe /api/jump-publico (service_role), que lo guarda con jump_voto_publico
+--     (el tope por conexión se revisa y se guarda en un solo paso). Las huellas del dispositivo y de la conexión
+--     solo las lee esa API.
+--   · Afuera solo se muestran porcentajes; los conteos por origen y quién propuso cada idea los ve solo el equipo.
 -- ============================================================
 
 create table if not exists public.jump_encuestas (
@@ -152,8 +153,11 @@ end;
 $$;
 
 -- Porcentaje por opción (sin cantidades). Para inscritos (encuestas no borrador), el equipo y la API pública.
+-- «propia» dice si la idea la propuso quien pregunta (la etiqueta «Tu idea»), sin decir quién propuso las demás.
+-- (drop antes de crear: si cambian las columnas que devuelve, create or replace no alcanza.)
+drop function if exists public.jump_encuesta_resultados(uuid);
 create or replace function public.jump_encuesta_resultados(p_encuesta uuid)
-returns table (opcion_id uuid, porcentaje int) language plpgsql stable security definer set search_path = public as $$
+returns table (opcion_id uuid, porcentaje int, propia boolean) language plpgsql stable security definer set search_path = public as $$
 begin
   if not (public.jump_es_admin() or auth.role() = 'service_role'
           or (public.jump_es_miembro() and exists (select 1 from public.jump_encuestas e where e.id = p_encuesta and e.estado <> 'borrador'))) then
@@ -161,21 +165,23 @@ begin
   end if;
   return query
     with n as (
-      select o.id, o.orden, o.creada_en, count(v.id) as votos
+      select o.id, o.orden, o.creada_en, o.propuesta_por, count(v.id) as votos
         from public.jump_encuesta_opciones o
         left join public.jump_encuesta_votos v on v.opcion_id = o.id
        where o.encuesta_id = p_encuesta
        group by o.id
     )
     select n.id, case when sum(n.votos) over () = 0 then 0
-                      else round(100.0 * n.votos / sum(n.votos) over ())::int end
+                      else round(100.0 * n.votos / sum(n.votos) over ())::int end,
+           coalesce(n.propuesta_por = auth.uid(), false)
       from n order by n.orden, n.creada_en;
 end;
 $$;
 
--- Conteos por origen (página pública / comunidad). Solo el equipo.
+-- Conteos por origen (página pública / comunidad) y quién propuso cada idea. Solo el equipo.
+drop function if exists public.jump_encuesta_conteos(uuid);
 create or replace function public.jump_encuesta_conteos(p_encuesta uuid)
-returns table (opcion_id uuid, publico int, inscritos int) language plpgsql stable security definer set search_path = public as $$
+returns table (opcion_id uuid, publico int, inscritos int, propuesta_por uuid) language plpgsql stable security definer set search_path = public as $$
 begin
   if not public.jump_es_admin() then
     raise exception 'sin_acceso' using errcode = '42501';
@@ -183,11 +189,39 @@ begin
   return query
     select o.id,
            (count(v.id) filter (where v.origen = 'publico'))::int,
-           (count(v.id) filter (where v.origen = 'inscrito'))::int
+           (count(v.id) filter (where v.origen = 'inscrito'))::int,
+           o.propuesta_por
       from public.jump_encuesta_opciones o
       left join public.jump_encuesta_votos v on v.opcion_id = o.id
      where o.encuesta_id = p_encuesta
      group by o.id order by o.orden, o.creada_en;
+end;
+$$;
+
+-- El voto de la página pública. Lo llama solo /api/jump-publico (service_role) con las huellas ya calculadas.
+-- El tope por conexión se revisa y el voto se guarda en un solo paso, con un candado por encuesta y conexión: muchos
+-- votos a la vez desde la misma red no lo pasan. Quien ya votó desde ese aparato puede cambiar su voto.
+-- Devuelve 'ok', 'tope' o 'cerrada' (la opción no es de una encuesta abierta real).
+create or replace function public.jump_voto_publico(p_opcion uuid, p_dispositivo text, p_ip text, p_tope int)
+returns text language plpgsql volatile security definer set search_path = public as $$
+declare
+  v_encuesta uuid;
+begin
+  select o.encuesta_id into v_encuesta
+    from public.jump_encuesta_opciones o join public.jump_encuestas e on e.id = o.encuesta_id
+   where o.id = p_opcion and e.estado = 'abierta' and not e.es_ejemplo;
+  if not found then
+    return 'cerrada';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended(v_encuesta::text || '|' || coalesce(p_ip, ''), 0));
+  if not exists (select 1 from public.jump_encuesta_votos where encuesta_id = v_encuesta and dispositivo_hash = p_dispositivo)
+     and (select count(*) from public.jump_encuesta_votos where encuesta_id = v_encuesta and ip_hash = p_ip) >= p_tope then
+    return 'tope';
+  end if;
+  insert into public.jump_encuesta_votos (encuesta_id, opcion_id, origen, dispositivo_hash, ip_hash)
+  values (v_encuesta, p_opcion, 'publico', p_dispositivo, p_ip)
+  on conflict (encuesta_id, dispositivo_hash) do update set opcion_id = excluded.opcion_id, actualizado_en = now();
+  return 'ok';
 end;
 $$;
 
@@ -217,6 +251,8 @@ begin
     execute format('grant execute on function %s to authenticated, service_role', f);
   end loop;
   execute 'revoke all on function public.jump_encuesta_estado() from public, anon, authenticated';
+  execute 'revoke all on function public.jump_voto_publico(uuid, text, text, int) from public, anon, authenticated';
+  execute 'grant execute on function public.jump_voto_publico(uuid, text, text, int) to service_role';
 end $$;
 
 -- ============================================================
@@ -228,8 +264,12 @@ alter table public.jump_encuesta_votos enable row level security;
 
 revoke all on table public.jump_encuestas, public.jump_encuesta_opciones, public.jump_encuesta_votos from anon, authenticated;
 -- Encuestas y opciones: el equipo hace todo (la RLS de abajo lo limita al equipo); los inscritos solo leen.
--- es_ejemplo y propuesta_por los pone el servidor, no el panel.
-grant select, delete on table public.jump_encuestas, public.jump_encuesta_opciones to authenticated;
+-- es_ejemplo y propuesta_por los pone el servidor, no el panel. propuesta_por tampoco se lee directo: junto con el
+-- directorio de la comunidad diría quién propuso cada idea (y por cuál votó al proponerla). El equipo lo ve en
+-- jump_encuesta_conteos y cada inscrito sabe cuál es la suya por jump_encuesta_resultados.
+grant select, delete on table public.jump_encuestas to authenticated;
+grant delete on table public.jump_encuesta_opciones to authenticated;
+grant select (id, encuesta_id, texto, orden, creada_en, es_ejemplo) on table public.jump_encuesta_opciones to authenticated;
 grant insert (pregunta, estado) on table public.jump_encuestas to authenticated;
 grant update (pregunta, estado) on table public.jump_encuestas to authenticated;
 grant insert (encuesta_id, texto, orden) on table public.jump_encuesta_opciones to authenticated;

@@ -56,6 +56,19 @@ export async function encuestaPublica() {
   return e ? armar(e) : null;
 }
 
+// La conexión que cuenta para el tope. En IPv6 a cada casa le dan una red /64 entera y el aparato cambia de dirección
+// dentro de ella, así que cuenta la red; en IPv4, la dirección.
+export function conexion(ip) {
+  const s = String(ip ?? "").trim().toLowerCase().split("%")[0];
+  if (!s.includes(":")) return s;
+  const v4 = s.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (v4) return v4[1];
+  const [a, b = ""] = s.split("::");
+  const izq = a ? a.split(":") : [], der = b ? b.split(":") : [];
+  const todo = s.includes("::") ? [...izq, ...Array(Math.max(0, 8 - izq.length - der.length)).fill("0"), ...der] : izq;
+  return todo.slice(0, 4).map((h) => parseInt(h || "0", 16).toString(16)).join(":") + "::/64";
+}
+
 const mal = (campo, error) => json({ ok: false, campo, error }, 400);
 const cerrada = () => json({ ok: false, error: "Esta encuesta ya cerró. Recarga la página para ver la de ahora." }, 409);
 
@@ -69,21 +82,15 @@ export async function votarPublico(b, ip) {
   const [e] = await leer(`jump_encuestas?id=eq.${o.encuesta_id}&estado=eq.abierta&es_ejemplo=eq.false&select=id,pregunta,estado`) || [];
   if (!e) return cerrada();
 
-  // Guardamos huellas (HMAC), nunca el id del aparato ni la IP.
-  const [dispositivo_hash, ip_hash] = await Promise.all([huellaDispositivo(b.dispositivo), huellaIp(ip)]);
-  const rc = await rest(`jump_encuesta_votos?encuesta_id=eq.${e.id}&ip_hash=eq.${encodeURIComponent(ip_hash)}` +
-    `&select=dispositivo_hash&limit=${TOPE_POR_CONEXION + 1}`);
-  if (!rc.ok) throw new Error(`contar votos ${rc.status}`);
-  const desdeAqui = (await rc.json()).map((v) => v.dispositivo_hash);
-  if (!desdeAqui.includes(dispositivo_hash) && desdeAqui.length >= TOPE_POR_CONEXION)
-    return json({ ok: false, error: "Ya votaron muchas personas desde esta conexión. Intenta desde otra red." }, 429);
-
-  const rv = await rest("jump_encuesta_votos?on_conflict=encuesta_id,dispositivo_hash", {
-    method: "POST",
-    body: { encuesta_id: e.id, opcion_id: o.id, origen: "publico", dispositivo_hash, ip_hash, actualizado_en: new Date().toISOString() },
-    prefer: "resolution=merge-duplicates,return=minimal",
+  // Guardamos huellas (HMAC), nunca el id del aparato ni la IP. El tope y el guardado los hace la base en un paso.
+  const [dispositivo_hash, ip_hash] = await Promise.all([huellaDispositivo(b.dispositivo), huellaIp(conexion(ip))]);
+  const rv = await rest("rpc/jump_voto_publico", {
+    method: "POST", body: { p_opcion: o.id, p_dispositivo: dispositivo_hash, p_ip: ip_hash, p_tope: TOPE_POR_CONEXION },
   });
   if (rv.status === 409) return cerrada(); // la opción se borró justo ahora
   if (!rv.ok) throw new Error(`guardar voto ${rv.status}`);
+  const r = await rv.json();
+  if (r === "cerrada") return cerrada();
+  if (r === "tope") return json({ ok: false, error: "Ya votaron muchas personas desde esta conexión. Intenta desde otra red." }, 429);
   return json({ ok: true, encuesta: await armar(e) });
 }

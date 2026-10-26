@@ -62,6 +62,19 @@ test("nadie inserta votos directo ni lee las huellas", async () => {
   await assert.rejects(como(db, X.E, "delete from jump_encuesta_votos"), /permission denied/);
 });
 
+test("el voto público solo lo guarda la API (service_role), con el tope por conexión en la base", async () => {
+  for (const quien of ["anon", X.E, X.A])
+    await assert.rejects(como(db, quien, "select jump_voto_publico($1, 'disp-z', 'ip-z', 30)", [o1]), /permission denied/);
+  const votar = async (disp, ip, op = o1) => (await una("service", "select jump_voto_publico($1, $2, $3, 2) r", [op, disp, ip])).r;
+  assert.equal(await votar("disp-1", "ip-z"), "ok");
+  assert.equal(await votar("disp-2", "ip-z"), "ok");
+  assert.equal(await votar("disp-3", "ip-z"), "tope");
+  assert.equal(await votar("disp-1", "ip-z", o2), "ok", "quien ya votó puede cambiar su voto");
+  assert.equal((await filas("service", "select 1 from jump_encuesta_votos where encuesta_id = $1", [enc])).length, 2);
+  await como(db, "service", "update jump_encuestas set estado = 'cerrada' where id = $1", [enc]);
+  assert.equal(await votar("disp-4", "ip-y"), "cerrada");
+});
+
 test("suspendida no vota", async () => {
   for (const quien of [X.S, X.N, X.U]) await assert.rejects(como(db, quien, "select jump_votar($1)", [o1]), /sin_acceso/);
   await assert.rejects(como(db, X.S, "select jump_proponer($1, $2)", [enc, "Idea de alguien suspendido"]), /sin_acceso/);
@@ -87,11 +100,23 @@ test("proponer crea la opción, vota por ella y solo una vez", async () => {
   await assert.rejects(como(db, X.A, "select jump_proponer($1, $2)", [enc, " x "]), /check constraint/); // muy corta
 });
 
+test("quién propuso cada idea lo ve solo el equipo; cada inscrito sabe cuál es la suya", async () => {
+  const { id } = await una(X.E, "select jump_proponer($1, $2) id", [enc, "Contabilidad básica"]);
+  // Con el directorio de la comunidad, propuesta_por diría quién la propuso (y por qué votó al proponerla).
+  for (const quien of [X.E, X.E2, X.A]) await assert.rejects(como(db, quien, "select propuesta_por from jump_encuesta_opciones"), /permission denied/);
+  const propias = async (quien) => Object.fromEntries((await filas(quien, "select opcion_id, propia from jump_encuesta_resultados($1)", [enc])).map((x) => [x.opcion_id, x.propia]));
+  assert.deepEqual(await propias(X.E), { [o1]: false, [o2]: false, [id]: true });
+  assert.deepEqual(await propias(X.E2), { [o1]: false, [o2]: false, [id]: false });
+  const c = await filas(X.A, "select opcion_id, propuesta_por from jump_encuesta_conteos($1)", [enc]);
+  assert.equal(c.find((x) => x.opcion_id === id).propuesta_por, X.E.id);
+  assert.equal(c.find((x) => x.opcion_id === o1).propuesta_por, null);
+});
+
 test("resultados: porcentajes sin conteos para el emprendedor; conteos por origen solo para el equipo", async () => {
   await como(db, X.E, "select jump_votar($1)", [o1]);
   await como(db, "service", "insert into jump_encuesta_votos (encuesta_id, opcion_id, origen, dispositivo_hash, ip_hash) values ($1, $2, 'publico', 'disp-1', 'ip-1')", [enc, o2]);
   const r = await filas(X.E, "select * from jump_encuesta_resultados($1)", [enc]);
-  assert.deepEqual(Object.keys(r[0]).sort(), ["opcion_id", "porcentaje"]);
+  assert.deepEqual(Object.keys(r[0]).sort(), ["opcion_id", "porcentaje", "propia"]);
   assert.deepEqual(Object.fromEntries(r.map((x) => [x.opcion_id, x.porcentaje])), { [o1]: 50, [o2]: 50 });
   assert.equal((await filas("service", "select * from jump_encuesta_resultados($1)", [enc])).length, 2, "la API pública también");
   await assert.rejects(como(db, X.E, "select * from jump_encuesta_conteos($1)", [enc]), /sin_acceso/);

@@ -603,6 +603,8 @@ dialog[open]{animation:dlg .22s var(--ease-out)}
 .page-head.con-jc{position:relative;min-height:150px;padding-right:150px}
 .jc-sitio-com{position:absolute;right:12px;bottom:0;width:72px;height:150px;pointer-events:none}
 .jc-escena[data-modo="grande"] .jc{--alto-jc:150px}
+/* Grande va con la página: al bajar pasa por detrás de la barra fija de arriba del celular (.mtop, z-index 30). */
+.jc-escena[data-modo="grande"]{z-index:20}
 @media (max-width:900px){
   .page-head.con-jc{min-height:110px;padding-right:96px}
   .jc-sitio-com{width:53px;height:110px}

@@ -136,6 +136,23 @@ test("tope por conexión: el aparato 31 desde la misma IP → 429, otra IP sí",
   assert.equal((await votar({ opcion: e.o1, dispositivo: disp(200) }, { ip: "192.0.2.51" })).status, 200);
 });
 
+test("tope por conexión con 60 votos a la vez desde la misma IP: entran 30", async () => {
+  const e = await encuesta("¿Qué curso quieres?", "abierta");
+  const r = await Promise.all(Array.from({ length: 60 }, (_, i) => votar({ opcion: e.o1, dispositivo: disp(300 + i) }, { ip: "192.0.2.77" })));
+  const n = (await uno("select count(*)::int n from jump_encuesta_votos where encuesta_id = $1", [e.id])).n;
+  assert.equal(n, 30);
+  assert.equal(r.filter((x) => x.status === 200).length, 30);
+  assert.equal(r.filter((x) => x.status === 429).length, 30);
+});
+
+test("tope por conexión en IPv6: las direcciones de una misma red /64 cuentan como una conexión", async () => {
+  const e = await encuesta("¿Qué curso quieres?", "abierta");
+  for (let i = 0; i < 30; i++)
+    assert.equal((await votar({ opcion: e.o1, dispositivo: disp(400 + i) }, { ip: `2001:db8:a:b:${(i + 1).toString(16)}::1` })).status, 200, `aparato ${i + 1}`);
+  assert.equal((await votar({ opcion: e.o1, dispositivo: disp(500) }, { ip: "2001:0db8:000a:000b:ffff:1:2:3" })).status, 429);
+  assert.equal((await votar({ opcion: e.o1, dispositivo: disp(501) }, { ip: "2001:db8:a:c::1" })).status, 200, "otra red /64 sí");
+});
+
 test("sin la tabla de encuestas (falta la 0003) GET responde 200 con encuesta null", async () => {
   const s = await iniciarSim({ db: await crearBase({ hasta: "0002" }) });
   try {

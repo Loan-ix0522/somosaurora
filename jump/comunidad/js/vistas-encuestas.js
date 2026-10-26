@@ -6,7 +6,7 @@ import * as datos from "./datos.js";
 import { texto as normTexto } from "./normalizar.js";
 import { haceCuanto } from "./fechas.js";
 import { vacio } from "./piezas.js";
-import { estado, refrescar } from "./app.js";
+import { refrescar } from "./app.js";
 import { cargar as cargarAdmin } from "./vistas-admin.js";
 
 const MAX = 8; // con más opciones se ven las 8 más votadas (y la mía) y «Ver todas»
@@ -32,13 +32,13 @@ function visibles(e) {
 
 export function tarjetaEncuesta(e) {
   E = e;
-  const abierta = e.estado === "abierta", lista = visibles(e), yo = estado.yo?.userId;
+  const abierta = e.estado === "abierta", lista = visibles(e);
   const nota = !abierta ? "Encuesta cerrada" : e.miVoto ? "Ya votaste · puedes cambiar tu voto" : "Toca una opción para votar";
   const opcion = (o) => {
     const mia = o.id === e.miVoto;
     return `<button type="button" class="enc-opt${mia ? " mine" : ""}" data-act="votar-encuesta" data-id="${esc(o.id)}" aria-pressed="${mia}"${abierta ? "" : " disabled"}>
       <span class="enc-fill" style="transform:scaleX(${o.porcentaje / 100})"></span>
-      <span class="enc-lbl"><span class="enc-tick" aria-hidden="true">${tick}</span><span class="enc-t">${esc(o.texto)}</span>${yo && o.propuestaPor === yo ? '<span class="tag">Tu idea</span>' : ""}</span>
+      <span class="enc-lbl"><span class="enc-tick" aria-hidden="true">${tick}</span><span class="enc-t">${esc(o.texto)}</span>${o.propia ? '<span class="tag">Tu idea</span>' : ""}</span>
       <span class="enc-pct">${o.porcentaje} %</span></button>`;
   };
   let pie = "";
@@ -150,7 +150,7 @@ const enviosMiembro = {
 // Lista con la abierta arriba, luego borradores y cerradas. Cada una con los votos por origen y quién propuso cada
 // idea. El editor (pregunta y opciones) se abre en el lugar de la tarjeta; lo escrito vive en `editando`.
 let L = null;          // EncuestaAdmin[] | "sin_tabla"
-let editando = null;   // { id, abierta, pregunta, opciones: [{ id, texto, votos }] }
+let editando = null;   // { id, abierta, pregunta, opciones: [{ id, texto, votos }], originales: [id de cada opción al abrir] }
 let enfocar = null;    // qué enfocar al terminar de dibujar
 let nombres = new Map();
 
@@ -320,7 +320,8 @@ const accionesPanel = {
   "enc-editar": (b) => {
     const e = deL(b.dataset.id);
     if (!e) return;
-    editando = { id: e.id, abierta: e.estado === "abierta", pregunta: e.pregunta, opciones: e.opciones.map((o) => ({ id: o.id, texto: o.texto, votos: votosDe(o) })) };
+    editando = { id: e.id, abierta: e.estado === "abierta", pregunta: e.pregunta, opciones: e.opciones.map((o) => ({ id: o.id, texto: o.texto, votos: votosDe(o) })),
+      originales: e.opciones.map((o) => o.id) };
     pintarPanel("#encPregunta");
   },
   "enc-cancelar": () => {
@@ -397,7 +398,8 @@ async function guardarEditor(f, btn) {
   if (errO) return $("#encOps input")?.focus();
   try {
     const nueva = !editando.id;
-    const id = await ocupado(btn, datos.guardarEncuesta({ id: editando.id, pregunta, opciones: llenas.map((o) => ({ id: o.id, texto: o.texto })) }));
+    const quitar = (editando.originales || []).filter((x) => !llenas.some((o) => o.id === x));
+    const id = await ocupado(btn, datos.guardarEncuesta({ id: editando.id, pregunta, opciones: llenas.map((o) => ({ id: o.id, texto: o.texto })), quitar }));
     editando = null;
     await recargarPanel(`[data-act="enc-editar"][data-id="${id}"]`);
     toast(nueva ? "Encuesta guardada como borrador. Ábrela cuando esté lista." : "Cambios guardados.");
